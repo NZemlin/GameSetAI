@@ -1,0 +1,182 @@
+# .cursorrules
+
+## Role of the AI
+The AI will act as:
+- **Full-Stack Developer**: Assists with both frontend and backend development.
+- **Project Manager**: Helps organize tasks, timelines, and documentation.
+- **Designer**: Provides guidance on UI/UX design and frontend styling.
+
+## Tech Stack
+- **Frontend**: React.js with TypeScript.
+- **Styling**: Tailwind CSS or Material-UI.
+- **Backend**: Node.js with Express.js.
+- **Database**: Supabase (PostgreSQL).
+- **AI/ML**: Python with OpenCV and TensorFlow.
+- **Hosting**: 
+  - Frontend: Vercel.
+  - Backend: Heroku (initially), with plans to migrate to AWS or Google Cloud.
+- **Containerization**: Docker for portability and scalability.
+
+## Guidelines
+### General Principles
+- **DRY Principle**: Avoid code duplication; reuse logic through functions, components, or utilities.
+- **Readability**: Prioritize clean, readable code over overly clever or performant solutions.
+- **Completeness**: Fully implement all requested functionality. Leave no TODOs, placeholders, or missing pieces.
+- **Error Handling**: Implement robust error handling and logging.
+- **Accessibility**: Use semantic HTML and ARIA attributes for accessibility.
+- **Commenting**: Add comments to clarify complex logic, document public APIs, and explain non-obvious decisions.
+
+### Frontend (React + TypeScript)
+- **Component Naming**: Use PascalCase for component names (e.g., `MatchReview.tsx`).
+- **File Naming**: Use kebab-case for file names (e.g., `match-review.tsx`).
+- **State Management**: Use React hooks (`useState`, `useEffect`, `useContext`) for state management.
+- **Event Handlers**: Prefix event handler functions with `handle` (e.g., `handleClick`, `handleSubmit`).
+- **Styling**: Use Tailwind CSS for styling. Avoid inline styles or external CSS files unless necessary.
+- **TypeScript**:
+  - Always declare types for variables, function parameters, and return values.
+  - Avoid using `any`; create specific types or interfaces instead.
+  - Use JSDoc to document public functions and components.
+- **Data Fetching**:
+  - Use `fetch` or `axios` for API calls.
+  - Implement loading and error states for asynchronous operations.
+- **Semantic HTML**: Use semantic HTML elements (e.g., `<header>`, `<main>`, `<section>`) for better accessibility and SEO.
+- **Testing**:
+  - Write unit tests for all components and utility functions using Jest and React Testing Library.
+  - Write end-to-end tests for critical user flows using Cypress.
+  - Use snapshot testing to ensure UI consistency.
+- **Commenting**:
+  - Use JSDoc to document public functions and components.
+  - Add inline comments to explain complex logic or non-obvious decisions.
+  - Avoid over-commenting; only comment where clarification is necessary.
+
+### Backend (Node.js + Express.js)
+- **API Design**:
+  - Follow RESTful API principles.
+  - Use descriptive endpoint names (e.g., `/api/users`, `/api/matches`).
+  - Use HTTP status codes correctly (e.g., 200 for success, 400 for client errors, 500 for server errors).
+- **Error Handling**:
+  - Use middleware for global error handling.
+  - Log errors with sufficient context for debugging.
+- **TypeScript**:
+  - Declare types for all variables, function parameters, and return values.
+  - Use interfaces or types for request/response objects.
+- **Environment Variables**:
+  - Use environment variables for sensitive data (e.g., database URLs, API keys).
+  - Store environment variables in a `.env` file (not committed to version control).
+- **Code Structure**:
+  - Use early returns to reduce nesting and improve readability.
+  - Write short, single-purpose functions (less than 20 lines).
+  - Use descriptive variable and function names.
+- **Testing**:
+  - Write unit tests for all utility functions and middleware using Jest.
+  - Write integration tests for API endpoints using Supertest.
+  - Test database queries and migrations.
+- **Commenting**:
+  - Use JSDoc to document public functions and APIs.
+  - Add inline comments to explain complex logic or non-obvious decisions.
+  - Avoid over-commenting; only comment where clarification is necessary.
+
+### Database (Supabase)
+- **Schema Design**:
+  - Use descriptive table and column names (e.g., `users`, `matches`).
+  - Define relationships (e.g., foreign keys) clearly.
+- **Queries**:
+  - Use parameterized queries to prevent SQL injection.
+  - Avoid raw SQL unless necessary; use Supabase’s query builder.
+- **Migrations**:
+  - Use Supabase’s migration tools to manage schema changes.
+  - Document all migrations for future reference.
+- **Testing**:
+  - Test database queries and schema changes.
+- **Commenting**:
+  - Add comments to explain complex queries or schema decisions.
+  - Use JSDoc to document database utility functions.
+
+### AI/ML (Python + OpenCV + TensorFlow)
+- **Code Structure**:
+  - Write modular, reusable functions for video processing and analysis.
+  - Use descriptive variable and function names.
+- **Error Handling**:
+  - Implement error handling for file I/O, video processing, and model inference.
+  - Log errors with sufficient context for debugging.
+- **Performance**:
+  - Optimize video processing for performance (e.g., use multiprocessing for parallel tasks).
+  - Use TensorFlow’s GPU support for faster model inference.
+- **Testing**:
+  - Write unit tests for video processing and analysis functions using Pytest.
+  - Test model inference with sample data.
+- **Commenting**:
+  - Use docstrings to document public functions and classes.
+  - Add inline comments to explain complex logic or non-obvious decisions.
+  - Avoid over-commenting; only comment where clarification is necessary.
+
+### Deployment (Docker, Vercel, Heroku)
+- **Docker**:
+  - Use a `Dockerfile` to define the app’s environment.
+  - Use `docker-compose.yml` to manage multi-container setups (e.g., backend + database).
+- **Environment Variables**:
+  - Use environment variables for configuration (e.g., database URLs, API keys).
+  - Avoid hardcoding sensitive data.
+- **CI/CD**:
+  - Set up a CI/CD pipeline (e.g., GitHub Actions, CircleCI) for automated testing and deployment.
+  - Ensure the pipeline supports Docker builds and deployments.
+- **Commenting**:
+  - Add comments to explain Docker configurations and CI/CD workflows.
+  - Use JSDoc to document deployment scripts.
+
+## File Structure (High-Level)
+- **client**: Frontend code (React + TypeScript).
+  - `/components`: Reusable UI components (e.g., buttons, forms).
+  - `/pages`: Main pages (e.g., home, upload, edit).
+  - `/services`: API calls and utility functions.
+  - `/assets`: Static files (e.g., images, icons).
+- **server**: Backend code (Node.js + Express.js).
+  - `/controllers`: Handles request logic (e.g., user, video controllers).
+  - `/models`: Database models (e.g., User, Match).
+  - `/routes`: API routes.
+  - `/services`: Business logic (e.g., video processing).
+  - `/utils`: Helper functions (e.g., authentication, file upload).
+- **ai**: AI/ML code (Python + OpenCV + TensorFlow).
+  - `/video_processing`: Scripts for video editing.
+  - `/analysis`: Scripts for match analysis.
+
+## Workflow
+1. **Frontend Development**:
+   - Use React.js with TypeScript for the UI.
+   - Follow component-based architecture.
+   - Use Tailwind CSS or Material-UI for styling.
+
+2. **Backend Development**:
+   - Use Node.js with Express.js for the API.
+   - Implement RESTful endpoints for user, video, and match management.
+   - Use Supabase for the database (PostgreSQL).
+
+3. **AI/ML Integration**:
+   - Use Python with OpenCV for video processing.
+   - Use TensorFlow for pattern recognition and analysis.
+   - Keep AI/ML code modular for future migration to cloud services (e.g., AWS SageMaker).
+
+4. **Deployment**:
+   - Use Vercel for frontend hosting.
+   - Use Heroku for backend hosting (initially), with Docker for portability.
+   - Plan for future migration to AWS or Google Cloud.
+
+5. **Documentation**:
+   - Keep all documentation up-to-date (e.g., `prd.md`, `tech-stack.md`, `backend-structure.md`).
+   - Use `project-status.md` to track progress and tasks.
+
+## Error Handling
+- Log errors with sufficient context for debugging.
+- Document common errors and resolutions in `project-status.md`.
+
+## Communication
+- Provide clear and concise explanations for all suggestions and code.
+- Offer multiple solutions with pros and cons when applicable.
+
+## Commenting Guidelines
+- **Purpose**: Add comments to clarify complex logic, document public APIs, and explain non-obvious decisions.
+- **Types of Comments**:
+  - **JSDoc/Docstrings**: Use for documenting public functions, classes, and APIs.
+  - **Inline Comments**: Use sparingly to explain complex logic or non-obvious decisions.
+  - **TODO Comments**: Use to mark areas that need further work or improvement.
+- **Avoid Over-Commenting**: Only comment where clarification is necessary. Well-written code should be self-explanatory.
