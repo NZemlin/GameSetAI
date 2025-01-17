@@ -6,6 +6,8 @@ import RequestReset from './pages/auth/RequestReset';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import VideoUpload from './pages/VideoUpload';
+import Videos from './pages/Videos';
+import VideoEdit from './pages/VideoEdit';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -24,6 +26,16 @@ function App() {
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/videos" element={
+            <ProtectedRoute>
+              <Videos />
+            </ProtectedRoute>
+          } />
+          <Route path="/edit/:id" element={
+            <ProtectedRoute>
+              <VideoEdit />
             </ProtectedRoute>
           } />
           <Route path="/profile" element={

@@ -46,3 +46,7 @@
 **/.cache
 **/.temp
 **/Thumbs.db 
+
+# Uploaded files
+server/uploads/*
+!server/uploads/.gitkeep 

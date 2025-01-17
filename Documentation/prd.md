@@ -65,8 +65,8 @@ GameSetAI is an app designed to help tennis players, coaches, and clubs edit and
 
 ### Backend
 - **Framework**: Node.js with Express.js.
-- **Database**: Supabase (PostgreSQL).
-- **Hosting**: Heroku (initially), with plans to migrate to AWS or Google Cloud.
+- **Database**: Local file system for video storage, Supabase (PostgreSQL) later.
+- **Hosting**: Heroku, AWS/Google Cloud later.
 
 ### AI/ML (Future)
 - **Libraries**: Python with OpenCV and TensorFlow.

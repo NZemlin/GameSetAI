@@ -35,6 +35,11 @@ This document outlines the technologies used in the GameSetAI project, including
 - **Node.js**: A JavaScript runtime for building scalable server-side applications.
 - **Express.js**: A web framework for Node.js.
 
+### Storage
+- **Local File System**: For storing video files during MVP phase.
+- **Multer**: Middleware for handling file uploads.
+- **Future**: Migrate to Supabase storage post-MVP.
+
 ### API Design
 - **RESTful APIs**: Follow REST principles for clean and predictable endpoints.
 - **JSON**: Use JSON for request/response payloads.
