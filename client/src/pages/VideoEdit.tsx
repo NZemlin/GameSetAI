@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import Scoreboard from '../components/Scoreboard';
 
 interface Video {
   id: string;
@@ -13,6 +14,7 @@ interface Video {
 const VideoEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,6 +34,23 @@ const VideoEdit = () => {
 
     fetchVideo();
   }, [id]);
+
+  const handleNameChange = async (newName: string) => {
+    if (!video) return;
+    try {
+      const response = await axios.put(`http://localhost:3000/api/videos/${video.id}/rename`, {
+        name: newName || 'Untitled Video'
+      });
+      setVideo(prev => prev ? { ...prev, name: response.data.video.name } : null);
+    } catch (err) {
+      console.error('Error updating video name:', err);
+    }
+  };
+
+  const handlePlayerNamesChange = (player1: string, player2: string) => {
+    console.log('Player names updated:', { player1, player2 });
+    // Will handle saving player names later
+  };
 
   if (loading) {
     return (
@@ -54,7 +73,18 @@ const VideoEdit = () => {
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-semibold text-gray-900">{video.name}</h1>
+            <div className="flex items-center space-x-4">
+              <input
+                type="text"
+                value={video.name === 'Untitled Video' ? '' : video.name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Untitled Video"
+                className="text-2xl font-semibold text-gray-900 bg-transparent focus:outline-none placeholder-gray-400 min-w-[200px]"
+              />
+              <span className="text-sm text-gray-500">
+                Uploaded {new Date(video.createdAt).toLocaleDateString()}
+              </span>
+            </div>
             <button
               onClick={() => navigate('/videos')}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -63,38 +93,31 @@ const VideoEdit = () => {
             </button>
           </div>
 
-          <div className="bg-white shadow rounded-lg overflow-hidden">
+          <div className="bg-white shadow-lg rounded-lg overflow-hidden">
             <div className="p-6">
-              <div className="aspect-w-16 aspect-h-9">
-                <video
-                  controls
-                  className="w-full h-full rounded-lg"
-                  src={`http://localhost:3000/${video.path}`}
-                >
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-
-              <div className="mt-6">
-                <h2 className="text-lg font-medium text-gray-900">Video Details</h2>
-                <dl className="mt-2 border-t border-b border-gray-200 divide-y divide-gray-200">
-                  <div className="py-3 flex justify-between text-sm font-medium">
-                    <dt className="text-gray-500">Uploaded</dt>
-                    <dd className="text-gray-900">{new Date(video.createdAt).toLocaleDateString()}</dd>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Video Player Column */}
+                <div className="lg:col-span-2">
+                  <div className="aspect-w-16 aspect-h-9">
+                    <video
+                      ref={videoRef}
+                      controls
+                      className="w-full h-full rounded-lg"
+                      src={`http://localhost:3000/${video.path}`}
+                    >
+                      Your browser does not support the video tag.
+                    </video>
                   </div>
-                  <div className="py-3 flex justify-between text-sm font-medium">
-                    <dt className="text-gray-500">Filename</dt>
-                    <dd className="text-gray-900">{video.filename}</dd>
-                  </div>
-                </dl>
-              </div>
+                </div>
 
-              {/* Placeholder for future editing features */}
-              <div className="mt-6">
-                <h2 className="text-lg font-medium text-gray-900">Editing Tools</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  Video editing features will be available in a future update.
-                </p>
+                {/* Scoreboard Column */}
+                <div className="lg:col-span-1">
+                  <h2 className="text-lg font-medium text-gray-900 mb-4">Match Score</h2>
+                  <Scoreboard 
+                    onPlayerNamesChange={handlePlayerNamesChange}
+                    videoRef={videoRef}
+                  />
+                </div>
               </div>
             </div>
           </div>

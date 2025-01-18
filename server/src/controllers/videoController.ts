@@ -45,7 +45,7 @@ export const listVideos = async (req: Request, res: Response) => {
     
     const videos = await Promise.all(
       files
-        .filter(filename => filename !== 'metadata.json')
+        .filter(filename => filename !== 'metadata.json' && filename !== '.gitkeep')
         .map(async (filename) => {
           const filePath = path.join(uploadsDir, filename);
           const stats = await fs.stat(filePath);
