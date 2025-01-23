@@ -31,29 +31,30 @@
    - Server selection interface
    - Point tracking system with video integration
 
-## In Progress
-1. **Match Scoring System**
+5. **Match Scoring System**
    - Score tracking implementation
    - Point validation logic
-   - Point editing interface
+   - Server tracking in tiebreaks and regular games
+   - Support for both tiebreak-only and full match modes
+   - Proper handling of game, set, and tiebreak transitions
 
-2. **Video Processing**
+## In Progress
+1. **Video Processing**
    - Backend trimming system
    - Clip management
    - Export functionality
 
 ## Next Steps
-1. **Score Tracking Development**
-   - Implement scoring logic based on match type
-   - Add validation for point sequences
-   - Create match statistics view
-   - Design point editing interface
+1. **Score Tracking Enhancement**
+   - Add match statistics view
+   - Create point editing interface
    - Develop match metadata storage
+   - Add undo/redo functionality for scoring
 
 2. **Video Editor Enhancement**
    - Improve video playback controls
    - Add match export functionality
-   - Implement undo/redo for point tracking
+   - Add point markers on video timeline
 
 ## Known Issues
 1. **Storage**
@@ -76,7 +77,7 @@
    - Player performance metrics
 
 ## Notes
-- Currently focused on core match scoring functionality
+- Core scoring functionality is now complete and stable
+- Need to focus on video processing features next
 - Planning database schema for match data storage
-- Need to handle edge cases in scoring rules
 - AI features planned for future iterations
