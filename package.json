@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "tailwind-scrollbar": "^3.1.0",
     "typescript": "^5.7.3"
   }
-} 
+}

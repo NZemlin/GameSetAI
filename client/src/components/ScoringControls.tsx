@@ -31,7 +31,7 @@ const ScoringControls = ({
                 : 'text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
               }`}
           >
-            Start Point
+            Point Start
           </button>
         </div>
         <div className="flex space-x-2">
@@ -44,7 +44,7 @@ const ScoringControls = ({
                 : 'border-gray-300 text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-indigo-500'
             }`}
           >
-            {getDisplayName(player1, "Player 1")} Point
+            Point {getDisplayName(player1, "Player 1")}
           </button>
           <button
             onClick={() => onPointWinner(2)}
@@ -55,7 +55,7 @@ const ScoringControls = ({
                 : 'border-gray-300 text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-indigo-500'
             }`}
           >
-            {getDisplayName(player2, "Player 2")} Point
+            Point {getDisplayName(player2, "Player 2")}
           </button>
         </div>
       </div>

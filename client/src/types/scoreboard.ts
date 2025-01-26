@@ -15,13 +15,24 @@ export interface MatchConfig {
   tiebreakPoints: 7 | 10;
   noAd: boolean;
   inTiebreak: boolean;
-  tiebreakFirstServer: 1 | 2 | null;  // Track who served first in tiebreak
+  firstServer: 1 | 2 | null;
 }
 
 export interface Point {
   startTime: number | null;
   endTime: number | null;
   winner: 1 | 2 | null;
+  scoreState?: {
+    player1: Player;
+    player2: Player;
+    inTiebreak: boolean;
+  };
+  divider?: 'set' | 'game' | 'tiebreak' | 'tiebreak-start';
+}
+
+export interface ChronologicalPoints {
+  points: Point[];
+  currentIndex: number;
 }
 
 export interface ScoreboardProps {

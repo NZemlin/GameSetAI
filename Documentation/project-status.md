@@ -37,6 +37,10 @@
    - Server tracking in tiebreaks and regular games
    - Support for both tiebreak-only and full match modes
    - Proper handling of game, set, and tiebreak transitions
+   - Chronological point tracking with video timestamps
+   - Out-of-order point insertion with score recalculation
+   - Visual dividers for game, set, and tiebreak completions
+   - Scrollable points list with modern styling
 
 ## In Progress
 1. **Video Processing**
@@ -50,11 +54,13 @@
    - Create point editing interface
    - Develop match metadata storage
    - Add undo/redo functionality for scoring
+   - Add point markers on video timeline
+   - Implement point deletion
 
 2. **Video Editor Enhancement**
-   - Improve video playback controls
-   - Add match export functionality
    - Add point markers on video timeline
+   - Add frame-by-frame navigation
+   - Add keyboard shortcuts for common actions
 
 ## Known Issues
 1. **Storage**
