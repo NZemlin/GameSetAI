@@ -1,10 +1,9 @@
-import { ScoreboardProps, Point } from '../types/scoreboard';
+import { ScoreboardProps, Point, Player, MatchConfig } from '../types/scoreboard';
 import { 
   handleRegularPoint, 
   handleGameWin,
-  isTiebreakWon,
-  recalculateScoreFromPoints,
-  handleTiebreakPoint
+  handleTiebreakPoint,
+  calculateScoreState
 } from '../utils/scoreHandlers';
 import { useScoreboardState } from '../hooks/useScoreboardState';
 import { useServerManagement } from '../hooks/useServerManagement';
@@ -45,6 +44,22 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
     handleTiebreakWin
   } = usePointHandling(setPlayer1, setPlayer2, setMatchConfig, updateServerAfterTiebreak);
 
+  const calculateDivider = (state: { player1: Player, player2: Player, matchConfig: MatchConfig }) => {
+    let divider: Point['divider'] = undefined;
+    if (state.player1.currentGame === 0 && state.player2.currentGame === 0) {
+      if (state.matchConfig.type === 'tiebreak') {
+        divider = 'tiebreak';
+      } else if (state.player1.currentSet === 0 && state.player2.currentSet === 0) {
+        divider = 'set';
+      } else if (state.player1.currentSet === 6 && state.player2.currentSet === 6) {
+        divider = 'tiebreak-start';
+      } else {
+        divider = 'game';
+      }
+    }
+    return divider;
+  };
+
   const handlePointWinner = (winner: 1 | 2) => {
     if (!videoRef?.current || !currentPoint.startTime) return;
     
@@ -77,57 +92,28 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
         ...matchConfig,
         inTiebreak: false
       };
+      player1.isServing = matchConfig.firstServer === 1;
+      player2.isServing = matchConfig.firstServer === 2;
+      const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig, allStates = [] } = 
+        calculateScoreState(newPoints, { 
+          player1: { ...player1, currentGame: 0, currentSet: 0, completedSets: [] },
+          player2: { ...player2, currentGame: 0, currentSet: 0, completedSets: [] },
+          matchConfig: initialMatchConfig 
+        });
 
-      const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig } = 
-        recalculateScoreFromPoints(newPoints, initialMatchConfig);
-
-      // Update each point's scoreState with the recalculated scores
+      // Update each point's scoreState with the precomputed states
       const updatedPoints = newPoints.map((point, index) => {
-        const prevPoints = newPoints.slice(0, index);
-        const { player1, player2, matchConfig } = recalculateScoreFromPoints(prevPoints, initialMatchConfig);
-
+        const state = allStates[index];
+        
         // Determine if this point should have a divider
-        let divider: Point['divider'] = undefined;
-        const winningPlayer = point.winner === 1 ? player1 : player2;
-        const losingPlayer = point.winner === 1 ? player2 : player1;
-
-        if (matchConfig.type === 'tiebreak' || matchConfig.inTiebreak) {
-          // Check for tiebreak win
-          const winner = point.winner!;
-          const winnerGame = winner === 1 ? player1.currentGame + 1 : player2.currentGame + 1;
-          const loserGame = winner === 1 ? player2.currentGame : player1.currentGame;
-          if (isTiebreakWon(winnerGame, loserGame, matchConfig.tiebreakPoints)) {
-            divider = 'tiebreak';
-          }
-        } else {
-          // Check for game win
-          const isGameWin = (winningPlayer.currentGame === 3 && losingPlayer.currentGame < 3) || // Regular win
-                           (winningPlayer.currentGame === 4) || // Win from advantage
-                           (winningPlayer.currentGame === 3 && losingPlayer.currentGame === 3 && matchConfig.noAd); // No-ad win
-
-          if (isGameWin) {
-            // Calculate what the score will be after this game
-            const newSetGames = winningPlayer.currentSet + 1;
-            const opponentSetGames = losingPlayer.currentSet;
-
-            if (newSetGames === 6 && opponentSetGames <= 4) {
-              divider = 'set'; // Set win at 6-4 or better
-            } else if (newSetGames === 7 && opponentSetGames === 5) {
-              divider = 'set'; // Set win at 7-5
-            } else if (newSetGames === 6 && opponentSetGames === 6) {
-              divider = 'tiebreak-start'; // Score reaches 6-6
-            } else {
-              divider = 'game'; // Regular game win
-            }
-          }
-        }
+        const divider: Point['divider'] = calculateDivider(state);
 
         return {
           ...point,
           scoreState: {
-            player1,
-            player2,
-            inTiebreak: matchConfig.inTiebreak
+            player1: state.player1,
+            player2: state.player2,
+            inTiebreak: state.matchConfig.inTiebreak
           },
           divider
         } as Point;
@@ -145,9 +131,24 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
       setPlayer2(newPlayer2);
       setMatchConfig(newMatchConfig);
     } else {
-      // Point was added at the end, determine if it should have a divider
+      // Point was added at the end, calculate the state after this point
+      const afterPointState = calculateScoreState(
+        { winner },
+        { player1, player2, matchConfig }
+      );
+
+      // Use the after-point state for the point's scoreState
+      pointData.scoreState = {
+        player1: afterPointState.player1,
+        player2: afterPointState.player2,
+        inTiebreak: afterPointState.matchConfig.inTiebreak
+      };
+
+      pointData.divider = calculateDivider(afterPointState);
+
+      // Then proceed with the actual state updates
       if (matchConfig.type === 'tiebreak' || matchConfig.inTiebreak) {
-        const tiebreakWon = handleTiebreakPoint(
+        handleTiebreakPoint(
           winner,
           player1,
           player2,
@@ -157,34 +158,7 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
           (winner) => handleTiebreakWin(winner, matchConfig, player1, player2),
           switchServer
         );
-        if (tiebreakWon) {
-          pointData.divider = 'tiebreak';
-        }
       } else {
-        const winningPlayer = winner === 1 ? player1 : player2;
-        const losingPlayer = winner === 1 ? player2 : player1;
-
-        // Check for game win
-        const isGameWin = (winningPlayer.currentGame === 3 && losingPlayer.currentGame < 3) || // Regular win
-                         (winningPlayer.currentGame === 4) || // Win from advantage
-                         (winningPlayer.currentGame === 3 && losingPlayer.currentGame === 3 && matchConfig.noAd); // No-ad win
-
-        if (isGameWin) {
-          // Calculate what the score will be after this game
-          const newSetGames = winningPlayer.currentSet + 1;
-          const opponentSetGames = losingPlayer.currentSet;
-
-          if (newSetGames === 6 && opponentSetGames <= 4) {
-            pointData.divider = 'set'; // Set win at 6-4 or better
-          } else if (newSetGames === 7 && opponentSetGames === 5) {
-            pointData.divider = 'set'; // Set win at 7-5
-          } else if (newSetGames === 6 && opponentSetGames === 6) {
-            pointData.divider = 'tiebreak-start'; // Score reaches 6-6
-          } else {
-            pointData.divider = 'game'; // Regular game win
-          }
-        }
-
         handleRegularPoint(
           winner,
           player1,

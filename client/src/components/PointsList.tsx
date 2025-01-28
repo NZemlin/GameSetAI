@@ -104,9 +104,9 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
       const winner = point.winner === 1 ? player1 : player2;
       switch (point.divider) {
         case 'set': {
-          const winnerScore = currentState[winner === player1 ? 'player1' : 'player2'].currentSet + 1;
-          const loserScore = currentState[winner === player1 ? 'player2' : 'player1'].currentSet;
-          const setIndex = currentState.player1.completedSets.length;
+          const setIndex = currentState.player1.completedSets.length - 1;
+          const winnerScore = currentState[winner === player1 ? 'player1' : 'player2'].completedSets[setIndex].score;
+          const loserScore = currentState[winner === player1 ? 'player2' : 'player1'].completedSets[setIndex].score;
 
           elements.push(
             <div key={`set-${index}`} className="py-3 bg-indigo-50 text-center">
@@ -122,8 +122,9 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
           break;
         }
         case 'tiebreak': {
-          const winnerScore = currentState[winner === player1 ? 'player1' : 'player2'].currentGame + 1;
-          const loserScore = currentState[winner === player1 ? 'player2' : 'player1'].currentGame;
+          const tiebreakIndex = currentState.player1.completedSets.length - 1;
+          const winnerScore = currentState[winner === player1 ? 'player1' : 'player2'].completedSets[tiebreakIndex].score;
+          const loserScore = currentState[winner === player1 ? 'player2' : 'player1'].completedSets[tiebreakIndex].score;
           const prevTiebreakWins = points.slice(0, index).filter(p => p.divider === 'tiebreak').length;
           
           elements.push(
@@ -140,7 +141,7 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
         }
         case 'tiebreak-start': {
           const currentSetIndex = currentState.player1.completedSets.length;
-          const server = currentState.player1.isServing ? player2 : player1;
+          const server = currentState.player1.isServing ? player1 : player2;
           elements.push(
             <div key={`tiebreak-${index}`} className="py-3 bg-indigo-50/75 text-center">
               <div className="text-sm font-medium text-gray-900">
@@ -151,10 +152,10 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
           break;
         }
         case 'game': {
-          const nextServer = !currentState.player1.isServing ? player1 : player2;
+          const nextServer = currentState.player1.isServing ? player1 : player2;
           const isPlayer2Server = nextServer === player2;
-          const p1Set = currentState.player1.currentSet + (point.winner === 1 ? 1 : 0);
-          const p2Set = currentState.player2.currentSet + (point.winner === 2 ? 1 : 0);
+          const p1Set = currentState.player1.currentSet;
+          const p2Set = currentState.player2.currentSet;
           
           elements.push(
             <div key={`game-${index}`} className="py-2 bg-indigo-50/50 text-center">

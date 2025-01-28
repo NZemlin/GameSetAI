@@ -1,5 +1,10 @@
 import { Player, MatchConfig, Point } from '../types/scoreboard';
 
+// =============================================================================
+// CORE POINT HANDLING
+// Functions for handling individual points in different game modes
+// =============================================================================
+
 // Convert game score number to tennis scoring format
 export const formatGameScore = (score: number, otherPlayerScore: number): string => {
   // If other player has Ad, return empty string
@@ -111,6 +116,11 @@ export const handleTiebreakPoint = (
   return false;
 };
 
+// =============================================================================
+// GAME AND SET MANAGEMENT
+// Functions for managing game and set transitions
+// =============================================================================
+
 export const handleGameWin = (
   winner: 1 | 2,
   player1: Player,
@@ -176,44 +186,222 @@ export const handleGameWin = (
   }
 };
 
-// Format player name or use default if empty
-export const getDisplayName = (player: Player, defaultName: string): string => {
-  return player.name.trim() || defaultName;
-};
+// =============================================================================
+// STATE CALCULATIONS
+// Functions for calculating and managing game state
+// =============================================================================
 
-// Check if a tiebreak is won based on scores and target points
-export const isTiebreakWon = (
-  winningScore: number,
-  losingScore: number,
-  targetPoints: number
-): boolean => {
-  return winningScore >= targetPoints && winningScore - losingScore >= 2;
-};
+// =============================================================================
+// STATE CALCULATION HELPERS
+// Internal helper functions for state calculations
+// =============================================================================
 
-// Determine if server should change during tiebreak
-export const shouldChangeServer = (totalPoints: number): boolean => {
-  if (totalPoints === 1) {
-    // First serve change after first point
-    return true;
+const handleTiebreakPointState = (
+  winner: 1 | 2,
+  player1: Player,
+  player2: Player,
+  matchConfig: MatchConfig
+): { player1: Player, player2: Player, matchConfig: MatchConfig } => {
+  const winningPlayer = winner === 1 ? player1 : player2;
+  const losingPlayer = winner === 1 ? player2 : player1;
+  
+  // Update tiebreak score
+  winningPlayer.currentGame += 1;
+  const totalPoints = player1.currentGame + player2.currentGame;
+
+  if (isTiebreakWon(winningPlayer.currentGame, losingPlayer.currentGame, matchConfig.tiebreakPoints)) {
+    if (matchConfig.type === 'match') {
+      player1.completedSets.push({
+        score: winner === 1 ? 7 : 6,
+        tiebreakScore: player1.currentGame,
+        wonSet: winner === 1
+      });
+      player2.completedSets.push({
+        score: winner === 2 ? 7 : 6,
+        tiebreakScore: player2.currentGame,
+        wonSet: winner === 2
+      });
+      matchConfig.inTiebreak = false;
+      const nextServer = calculateServer(matchConfig, player1, player2, true);
+      player1.isServing = nextServer === 1;
+      player2.isServing = nextServer === 2;
+      player1.currentSet = 0;
+      player2.currentSet = 0;
+    } else {
+      player1.completedSets.push({
+        score: player1.currentGame,
+        wonSet: winner === 1
+      });
+      player2.completedSets.push({
+        score: player2.currentGame,
+        wonSet: winner === 2
+      });
+      player1.isServing = false;
+      player2.isServing = false;
+    }
+    player1.currentGame = 0;
+    player2.currentGame = 0;
+  } else if (shouldChangeServer(totalPoints)) {
+    const wasPlayer1Serving = player1.isServing;
+    player1.isServing = !wasPlayer1Serving;
+    player2.isServing = wasPlayer1Serving;
   }
-  return totalPoints > 1 && totalPoints % 2 === 1;
+
+  return { player1, player2, matchConfig };
 };
 
-export function getTotalGamesWon(player: Player): number {
-  // Sum games from completed sets
-  const completedSetsGames = player.completedSets.reduce((total, set) => {
-    // For each completed set, add the games won (stored in score)
-    return total + set.score;
-  }, 0);
+const handleRegularPointState = (
+  winner: 1 | 2,
+  player1: Player,
+  player2: Player,
+  matchConfig: MatchConfig
+): { player1: Player, player2: Player, matchConfig: MatchConfig } => {
+  const winningPlayer = winner === 1 ? player1 : player2;
+  const losingPlayer = winner === 1 ? player2 : player1;
 
-  // Add games from current set
-  const totalGames = completedSetsGames + player.currentSet;
+  // Update game score
+  if (winningPlayer.currentGame === 3 && losingPlayer.currentGame === 3) {
+    if (matchConfig.noAd) {
+      winningPlayer.currentGame += 1;
+    } else {
+      winningPlayer.currentGame = 4;
+      losingPlayer.currentGame = 3;
+    }
+  } else if (winningPlayer.currentGame === 4) {
+    winningPlayer.currentGame += 1;
+  } else if (losingPlayer.currentGame === 4) {
+    winningPlayer.currentGame = 3;
+    losingPlayer.currentGame = 3;
+  } else if (winningPlayer.currentGame === 3) {
+    winningPlayer.currentGame += 1;
+  } else {
+    winningPlayer.currentGame += 1;
+  }
 
-  return totalGames;
-}
+  const isGameWin = (winningPlayer.currentGame === 4 && losingPlayer.currentGame < 3) ||
+                   (winningPlayer.currentGame === 5) ||
+                   (winningPlayer.currentGame === 4 && losingPlayer.currentGame === 3 && matchConfig.noAd);
 
-export const calculateServer = (matchConfig: MatchConfig, player1: Player, player2: Player, tiebreakWon: boolean): 1 | 2 => {
-  console.log('matchConfig', matchConfig, 'player1', player1, 'player2', player2)
+  if (isGameWin) {
+    const result = handleGameWinState(winner, player1, player2, matchConfig);
+    player1 = result.player1;
+    player2 = result.player2;
+    matchConfig = result.matchConfig;
+  }
+
+  return { player1, player2, matchConfig };
+};
+
+const handleGameWinState = (
+  winner: 1 | 2,
+  player1: Player,
+  player2: Player,
+  matchConfig: MatchConfig
+): { player1: Player, player2: Player, matchConfig: MatchConfig } => {
+  const winningPlayer = winner === 1 ? player1 : player2;
+  const losingPlayer = winner === 1 ? player2 : player1;
+
+  winningPlayer.currentSet += 1;
+  player1.currentGame = 0;
+  player2.currentGame = 0;
+  
+  const wasPlayer1Serving = player1.isServing;
+  player1.isServing = !wasPlayer1Serving;
+  player2.isServing = wasPlayer1Serving;
+
+  if (winningPlayer.currentSet === 6 && losingPlayer.currentSet <= 4) {
+    handleSetCompletion(winner, player1, player2);
+  } else if (winningPlayer.currentSet === 7 && losingPlayer.currentSet === 5) {
+    handleSetCompletion(winner, player1, player2);
+  } else if (winningPlayer.currentSet === 6 && losingPlayer.currentSet === 6) {
+    matchConfig.inTiebreak = true;
+  }
+
+  return { player1, player2, matchConfig };
+};
+
+const handleSetCompletion = (winner: 1 | 2, player1: Player, player2: Player) => {
+  player1.completedSets.push({
+    score: player1.currentSet,
+    wonSet: winner === 1
+  });
+  player2.completedSets.push({
+    score: player2.currentSet,
+    wonSet: winner === 2
+  });
+  player1.currentSet = 0;
+  player2.currentSet = 0;
+};
+
+export const calculateScoreState = (
+  input: Point[] | { winner: 1 | 2 },
+  initialState: {
+    player1: Player,
+    player2: Player,
+    matchConfig: MatchConfig
+  }
+): {
+  player1: Player,
+  player2: Player,
+  matchConfig: MatchConfig,
+  allStates?: { player1: Player, player2: Player, matchConfig: MatchConfig }[]
+} => {
+  // Initialize state by cloning
+  const player1: Player = JSON.parse(JSON.stringify(initialState.player1));
+  const player2: Player = JSON.parse(JSON.stringify(initialState.player2));
+  const matchConfig: MatchConfig = JSON.parse(JSON.stringify(initialState.matchConfig));
+  const allStates: { player1: Player, player2: Player, matchConfig: MatchConfig }[] = [];
+
+  // Handle single point case
+  if (!Array.isArray(input)) {
+    if (matchConfig.type === 'tiebreak' || matchConfig.inTiebreak) {
+      return handleTiebreakPointState(input.winner, player1, player2, matchConfig);
+    } else {
+      return handleRegularPointState(input.winner, player1, player2, matchConfig);
+    }
+  }
+
+  // Process multiple points
+  input.forEach((point) => {
+    let result;
+    if (matchConfig.type === 'tiebreak' || matchConfig.inTiebreak) {
+      result = handleTiebreakPointState(point.winner!, player1, player2, matchConfig);
+    } else {
+      result = handleRegularPointState(point.winner!, player1, player2, matchConfig);
+    }
+
+    // Update states
+    Object.assign(player1, result.player1);
+    Object.assign(player2, result.player2);
+    Object.assign(matchConfig, result.matchConfig);
+
+    // Store state after this point
+    allStates.push({
+      player1: JSON.parse(JSON.stringify(player1)),
+      player2: JSON.parse(JSON.stringify(player2)),
+      matchConfig: JSON.parse(JSON.stringify(matchConfig))
+    });
+  });
+
+  return {
+    player1,
+    player2,
+    matchConfig,
+    allStates
+  };
+};
+
+// =============================================================================
+// SERVER MANAGEMENT
+// Functions for determining and managing server state
+// =============================================================================
+
+export const calculateServer = (
+  matchConfig: MatchConfig, 
+  player1: Player, 
+  player2: Player, 
+  tiebreakWon: boolean
+): 1 | 2 => {
   const secondServer = matchConfig.firstServer! === 1 ? 2 : 1;
   const totalPoints = player1.currentGame + player2.currentGame;
   if (matchConfig.type === 'tiebreak') {
@@ -230,171 +418,40 @@ export const calculateServer = (matchConfig: MatchConfig, player1: Player, playe
   }
 };
 
-export const recalculateScoreFromPoints = (
-  points: Point[],
-  initialMatchConfig: MatchConfig
-): {
-  player1: Player,
-  player2: Player,
-  matchConfig: MatchConfig
-} => {
-  // Initialize players and match config
-  const player1: Player = {
-    name: '',
-    completedSets: [],
-    currentSet: 0,
-    currentGame: 0,
-    isServing: initialMatchConfig.firstServer === 1
-  };
+export const shouldChangeServer = (totalPoints: number): boolean => {
+  if (totalPoints === 1) {
+    // First serve change after first point
+    return true;
+  }
+  return totalPoints > 1 && totalPoints % 2 === 1;
+};
 
-  const player2: Player = {
-    name: '',
-    completedSets: [],
-    currentSet: 0,
-    currentGame: 0,
-    isServing: initialMatchConfig.firstServer === 2
-  };
+// =============================================================================
+// UTILITY FUNCTIONS
+// Helper functions for scoring and display
+// =============================================================================
 
-  const matchConfig: MatchConfig = { ...initialMatchConfig };
+export const getDisplayName = (player: Player, defaultName: string): string => {
+  return player.name.trim() || defaultName;
+};
 
-  console.log('player1', player1)
-  console.log('player2', player2)
+export const getTotalGamesWon = (player: Player): number => {
+  // Sum games from completed sets
+  const completedSetsGames = player.completedSets.reduce((total, set) => {
+    // For each completed set, add the games won (stored in score)
+    return total + set.score;
+  }, 0);
 
-  // Process each point in sequence
-  points.forEach((point) => {
-    console.log('processing point', point)
-    if (matchConfig.type === 'tiebreak' || matchConfig.inTiebreak) {
-      const totalPoints = player1.currentGame + player2.currentGame;
-      const winner = point.winner!;
-      const winningPlayer = winner === 1 ? player1 : player2;
-      const losingPlayer = winner === 1 ? player2 : player1;
+  // Add games from current set
+  const totalGames = completedSetsGames + player.currentSet;
 
-      // Update tiebreak score
-      winningPlayer.currentGame += 1;
+  return totalGames;
+};
 
-      // Check if tiebreak is won
-      if (isTiebreakWon(winningPlayer.currentGame, losingPlayer.currentGame, matchConfig.tiebreakPoints)) {
-        // Record set with tiebreak score
-        if (matchConfig.type === 'match') {
-          player1.completedSets.push({
-            score: winner === 1 ? 7 : 6,
-            tiebreakScore: player1.currentGame,
-            wonSet: winner === 1
-          });
-          player2.completedSets.push({
-            score: winner === 2 ? 7 : 6,
-            tiebreakScore: player2.currentGame,
-            wonSet: winner === 2
-          });
-          matchConfig.inTiebreak = false;
-          const nextServer = calculateServer(matchConfig, player1, player2, false);
-          player1.isServing = nextServer === 1;
-          player2.isServing = nextServer === 2;
-          // Reset current set scores after tiebreak win
-          player1.currentSet = 0;
-          player2.currentSet = 0;
-        } else {
-          // For tiebreak-only mode
-          player1.completedSets.push({
-            score: player1.currentGame,
-            wonSet: winner === 1
-          });
-          player2.completedSets.push({
-            score: player2.currentGame,
-            wonSet: winner === 2
-          });
-          // Reset serving state
-          player1.isServing = false;
-          player2.isServing = false;
-        }
-        player1.currentGame = 0;
-        player2.currentGame = 0;
-      } else if (shouldChangeServer(totalPoints + 1)) {
-        // Switch server
-        const wasPlayer1Serving = player1.isServing;
-        player1.isServing = !wasPlayer1Serving;
-        player2.isServing = wasPlayer1Serving;
-      }
-    } else {
-      // Regular point handling
-      const winner = point.winner!;
-      const winningPlayer = winner === 1 ? player1 : player2;
-      const losingPlayer = winner === 1 ? player2 : player1;
-
-      if (winningPlayer.currentGame === 3 && losingPlayer.currentGame === 3) {
-        if (matchConfig.noAd) {
-          // Game win on no-ad
-          winningPlayer.currentSet += 1;
-          player1.currentGame = 0;
-          player2.currentGame = 0;
-          // Switch server
-          const wasPlayer1Serving = player1.isServing;
-          player1.isServing = !wasPlayer1Serving;
-          player2.isServing = wasPlayer1Serving;
-        } else {
-          // Advantage
-          winningPlayer.currentGame = 4;
-        }
-      } else if (winningPlayer.currentGame === 4) {
-        // Win from advantage
-        winningPlayer.currentSet += 1;
-        player1.currentGame = 0;
-        player2.currentGame = 0;
-        // Switch server
-        const wasPlayer1Serving = player1.isServing;
-        player1.isServing = !wasPlayer1Serving;
-        player2.isServing = wasPlayer1Serving;
-      } else if (losingPlayer.currentGame === 4) {
-        // Back to deuce
-        player1.currentGame = 3;
-        player2.currentGame = 3;
-      } else if (winningPlayer.currentGame === 3 && losingPlayer.currentGame < 3) {
-        // Regular game win
-        winningPlayer.currentSet += 1;
-        player1.currentGame = 0;
-        player2.currentGame = 0;
-        // Switch server
-        const wasPlayer1Serving = player1.isServing;
-        player1.isServing = !wasPlayer1Serving;
-        player2.isServing = wasPlayer1Serving;
-      } else {
-        // Regular point
-        winningPlayer.currentGame += 1;
-      }
-
-      // Check for set completion
-      if (winningPlayer.currentSet === 6 && losingPlayer.currentSet <= 4) {
-        // Set win at 6-4 or better
-        player1.completedSets.push({
-          score: player1.currentSet,
-          wonSet: winner === 1
-        });
-        player2.completedSets.push({
-          score: player2.currentSet,
-          wonSet: winner === 2
-        });
-        player1.currentSet = 0;
-        player2.currentSet = 0;
-      } else if (winningPlayer.currentSet === 7 && losingPlayer.currentSet === 5) {
-        // Set win at 7-5
-        player1.completedSets.push({
-          score: player1.currentSet,
-          wonSet: winner === 1
-        });
-        player2.completedSets.push({
-          score: player2.currentSet,
-          wonSet: winner === 2
-        });
-        player1.currentSet = 0;
-        player2.currentSet = 0;
-      } else if (player1.currentSet === 6 && player2.currentSet === 6) {
-        // Start tiebreak
-        matchConfig.inTiebreak = true;
-      }
-    }
-    console.log('player1', player1)
-    console.log('player2', player2)
-  });
-
-  return { player1, player2, matchConfig };
+export const isTiebreakWon = (
+  winningScore: number,
+  losingScore: number,
+  targetPoints: number
+): boolean => {
+  return winningScore >= targetPoints && winningScore - losingScore >= 2;
 }; 
