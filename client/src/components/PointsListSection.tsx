@@ -10,6 +10,7 @@ interface PointsListSectionProps {
   scrollToIndex?: number;
   matchConfig: MatchConfig;
   onScrollComplete: () => void;
+  onSeek: (time: number) => void;
 }
 
 const PointsListSection = ({
@@ -20,7 +21,8 @@ const PointsListSection = ({
   player2,
   scrollToIndex,
   matchConfig,
-  onScrollComplete
+  onScrollComplete,
+  onSeek
 }: PointsListSectionProps) => {
   return (
     <div className="bg-white rounded-lg mt-4" style={{ boxShadow: '0 0 15px rgba(0, 0, 0, 0.1)' }}>
@@ -40,7 +42,7 @@ const PointsListSection = ({
       </button>
       {expanded && (
         <div 
-          className="overflow-y-scroll scrollbar-thin scrollbar-thumb-indigo-200 hover:scrollbar-thumb-indigo-300 scrollbar-track-transparent pr-2"
+          className="overflow-y-scroll scrollbar-thin scrollbar-thumb-indigo-200 hover:scrollbar-thumb-indigo-300 scrollbar-track-transparent"
           style={{ height: 'calc(100vh - 700px)' }}
         >
           <PointsList
@@ -51,6 +53,7 @@ const PointsListSection = ({
             scrollToIndex={scrollToIndex}
             matchConfig={matchConfig}
             onScrollComplete={onScrollComplete}
+            onSeek={onSeek}
           />
         </div>
       )}

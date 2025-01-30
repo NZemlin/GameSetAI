@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Scoreboard from '../components/Scoreboard';
+import VideoTimeline from '../components/VideoTimeline';
+import { Point } from '../types/scoreboard';
 
 interface Video {
   id: string;
@@ -18,6 +20,7 @@ const VideoEdit = () => {
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [points, setPoints] = useState<Point[]>([]);
 
   useEffect(() => {
     const fetchVideo = async () => {
@@ -50,6 +53,12 @@ const VideoEdit = () => {
   const handlePlayerNamesChange = (player1: string, player2: string) => {
     console.log('Player names updated:', { player1, player2 });
     // Will handle saving player names later
+  };
+
+  const handleSeek = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+    }
   };
 
   if (loading) {
@@ -108,6 +117,11 @@ const VideoEdit = () => {
                       Your browser does not support the video tag.
                     </video>
                   </div>
+                  <VideoTimeline
+                    videoRef={videoRef}
+                    points={points}
+                    onSeek={handleSeek}
+                  />
                 </div>
 
                 {/* Scoreboard Column */}
@@ -116,6 +130,7 @@ const VideoEdit = () => {
                   <Scoreboard 
                     onPlayerNamesChange={handlePlayerNamesChange}
                     videoRef={videoRef}
+                    onPointsChange={setPoints}
                   />
                 </div>
               </div>

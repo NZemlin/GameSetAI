@@ -41,6 +41,10 @@
    - Out-of-order point insertion with score recalculation
    - Visual dividers for game, set, and tiebreak completions
    - Scrollable points list with modern styling
+   - Point markers on video timeline with duration indication
+   - Time-based score display (shows score at current video time)
+   - Synchronized scrolling between video and points list
+   - Smart button disabling based on video position
 
 ## In Progress
 1. **Video Processing**
@@ -54,11 +58,9 @@
    - Create point editing interface
    - Develop match metadata storage
    - Add undo/redo functionality for scoring
-   - Add point markers on video timeline
    - Implement point deletion
 
 2. **Video Editor Enhancement**
-   - Add point markers on video timeline
    - Add frame-by-frame navigation
    - Add keyboard shortcuts for common actions
 
@@ -81,9 +83,3 @@
    - Point outcome tracking
    - Match statistics
    - Player performance metrics
-
-## Notes
-- Core scoring functionality is now complete and stable
-- Need to focus on video processing features next
-- Planning database schema for match data storage
-- AI features planned for future iterations

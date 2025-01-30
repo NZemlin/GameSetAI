@@ -16,6 +16,8 @@ interface ScoreboardHeaderProps {
   onPointWinner: (winner: 1 | 2) => void;
   onNameChange: (playerNum: 1 | 2, name: string) => void;
   onSetFirstServer: (playerNum: 1 | 2) => void;
+  currentVideoTime: number;
+  isTimeInExistingPoint: (time: number) => boolean;
 }
 
 const ScoreboardHeader = ({
@@ -30,7 +32,9 @@ const ScoreboardHeader = ({
   onStartPoint,
   onPointWinner,
   onNameChange,
-  onSetFirstServer
+  onSetFirstServer,
+  currentVideoTime,
+  isTimeInExistingPoint
 }: ScoreboardHeaderProps) => {
   return (
     <div className="bg-white rounded-lg overflow-x-auto" style={{ boxShadow: '0 0 15px rgba(0, 0, 0, 0.1)' }}>
@@ -48,6 +52,8 @@ const ScoreboardHeader = ({
           currentPoint={currentPoint}
           onStartPoint={onStartPoint}
           onPointWinner={onPointWinner}
+          currentVideoTime={currentVideoTime}
+          isTimeInExistingPoint={isTimeInExistingPoint}
         />
       )}
 

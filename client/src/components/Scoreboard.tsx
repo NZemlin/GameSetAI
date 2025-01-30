@@ -1,4 +1,4 @@
-import { ScoreboardProps, Point, Player, MatchConfig } from '../types/scoreboard';
+import { Point, Player, MatchConfig } from '../types/scoreboard';
 import { 
   handleRegularPoint, 
   handleGameWin,
@@ -10,8 +10,15 @@ import { useServerManagement } from '../hooks/useServerManagement';
 import { usePointHandling } from '../hooks/usePointHandling';
 import ScoreboardHeader from './ScoreboardHeader';
 import PointsListSection from './PointsListSection';
+import { useEffect, useState, useMemo } from 'react';
 
-const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
+interface ScoreboardComponentProps {
+  onPlayerNamesChange: (player1: string, player2: string) => void;
+  videoRef: React.RefObject<HTMLVideoElement>;
+  onPointsChange?: (points: Point[]) => void;
+}
+
+const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: ScoreboardComponentProps) => {
   const {
     player1,
     setPlayer1,
@@ -44,6 +51,115 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
     handleTiebreakWin
   } = usePointHandling(setPlayer1, setPlayer2, setMatchConfig, updateServerAfterTiebreak);
 
+  const [currentVideoTime, setCurrentVideoTime] = useState(0);
+  
+  // Update video time and handle scrolling
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const updateTime = () => {
+      const currentTime = video.currentTime;
+      setCurrentVideoTime(currentTime);
+      
+      // Find point that contains current time
+      const pointIndex = chronologicalPoints.points.findIndex(point => 
+        point.startTime !== null &&
+        point.endTime !== null &&
+        currentTime >= point.startTime &&
+        currentTime <= point.endTime
+      );
+
+      // If not found in a point's range, find the last point that starts before current time
+      const lastPointBeforeTime = [...chronologicalPoints.points]
+        .reverse()
+        .findIndex((point: Point) => 
+          point.startTime !== null && point.startTime <= currentTime
+        );
+      
+      const targetIndex = pointIndex !== -1 ? pointIndex : 
+        (lastPointBeforeTime !== -1 ? chronologicalPoints.points.length - 1 - lastPointBeforeTime : -1);
+
+      if (targetIndex !== -1) {
+        setScrollToIndex(targetIndex);
+      }
+    };
+
+    // Listen for both timeupdate and seeked events
+    video.addEventListener('timeupdate', updateTime);
+    video.addEventListener('seeked', updateTime);
+    
+    return () => {
+      video.removeEventListener('timeupdate', updateTime);
+      video.removeEventListener('seeked', updateTime);
+    };
+  }, [videoRef, chronologicalPoints.points, setScrollToIndex]);
+
+  // Filter points up to current video time
+  const filteredPoints = useMemo(() => {
+    return chronologicalPoints.points.filter(point => 
+      point.endTime !== null && 
+      point.endTime <= currentVideoTime
+    );
+  }, [chronologicalPoints.points, currentVideoTime]);
+
+  // Calculate current score based on filtered points
+  const currentScoreState = useMemo(() => {
+    const initialMatchConfig = {
+      ...matchConfig,
+      inTiebreak: false
+    };
+
+    // Create fresh initial state with correct server initialization
+    const initialState = {
+      player1: { 
+        ...player1,
+        currentGame: 0,
+        currentSet: 0,
+        completedSets: [],
+        isServing: matchConfig.firstServer === 1  // Initialize server based on firstServer
+      },
+      player2: { 
+        ...player2,
+        currentGame: 0,
+        currentSet: 0,
+        completedSets: [],
+        isServing: matchConfig.firstServer === 2  // Initialize server based on firstServer
+      },
+      matchConfig: initialMatchConfig
+    };
+
+    // If no points, return initial state
+    if (filteredPoints.length === 0) {
+      return initialState;
+    }
+
+    // Calculate score state based on filtered points
+    const { player1: currentPlayer1, player2: currentPlayer2, matchConfig: currentMatchConfig } = 
+      calculateScoreState(filteredPoints, initialState);
+
+    return {
+      player1: currentPlayer1,
+      player2: currentPlayer2,
+      matchConfig: currentMatchConfig
+    };
+  }, [filteredPoints, matchConfig, player1, player2]);
+
+  // Helper to check if time is within existing points
+  const isTimeInExistingPoint = (time: number) => {
+    return chronologicalPoints.points.some(point => 
+      point.startTime !== null &&
+      point.endTime !== null &&
+      time >= point.startTime &&
+      time <= point.endTime
+    );
+  };
+
+  // Notify parent component when points change
+  useEffect(() => {
+    onPointsChange?.(chronologicalPoints.points);
+  }, [chronologicalPoints.points, onPointsChange]);
+
   const calculateDivider = (state: { player1: Player, player2: Player, matchConfig: MatchConfig }) => {
     let divider: Point['divider'] = undefined;
     if (state.player1.currentGame === 0 && state.player2.currentGame === 0) {
@@ -62,10 +178,21 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
 
   const handlePointWinner = (winner: 1 | 2) => {
     if (!videoRef?.current || !currentPoint.startTime) return;
+    const currentTime = videoRef.current.currentTime;
+
+    // Validate time constraints
+    if (currentTime <= currentPoint.startTime) {
+      console.warn("End time must be after start time");
+      return;
+    }
+    if (isTimeInExistingPoint(currentTime)) {
+      console.warn("Cannot record point within existing point range");
+      return;
+    }
     
     const pointData: Partial<Point> = {
       startTime: currentPoint.startTime,
-      endTime: videoRef.current.currentTime,
+      endTime: currentTime,
       winner,
       scoreState: {
         player1: { ...player1 },
@@ -196,11 +323,19 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
 
   const handleStartPoint = () => {
     if (!videoRef?.current) return;
+    const currentTime = videoRef.current.currentTime;
+    
+    // Prevent starting in existing point
+    if (isTimeInExistingPoint(currentTime)) {
+      console.warn("Cannot start point within existing point range");
+      return;
+    }
+    
     // In tiebreak mode, don't allow starting a point unless a server is selected
     if (matchConfig.type === 'tiebreak' && !player1.isServing && !player2.isServing) return;
     
     setCurrentPoint({
-      startTime: videoRef.current.currentTime,
+      startTime: currentTime,
       endTime: null,
       winner: null
     });
@@ -208,21 +343,29 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
 
   const canStartScoring = matchConfig.type !== null && (player1.isServing || player2.isServing);
 
+  const handleSeek = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <ScoreboardHeader
         scoringStarted={scoringStarted}
-        matchConfig={matchConfig}
+        matchConfig={currentScoreState.matchConfig}
         setMatchConfig={setMatchConfig}
         canStartScoring={canStartScoring}
         onStartScoring={() => setScoringStarted(true)}
-        player1={player1}
-        player2={player2}
+        player1={currentScoreState.player1}
+        player2={currentScoreState.player2}
         currentPoint={currentPoint}
         onStartPoint={handleStartPoint}
         onPointWinner={handlePointWinner}
         onNameChange={handleNameChange}
         onSetFirstServer={setFirstServer}
+        currentVideoTime={currentVideoTime}
+        isTimeInExistingPoint={isTimeInExistingPoint}
       />
 
       {scoringStarted && (
@@ -230,11 +373,12 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef }: ScoreboardProps) => {
           expanded={pointsListExpanded}
           onExpandToggle={() => setPointsListExpanded(prev => !prev)}
           chronologicalPoints={chronologicalPoints}
-          player1={player1}
-          player2={player2}
+          player1={currentScoreState.player1}
+          player2={currentScoreState.player2}
           scrollToIndex={scrollToIndex}
-          matchConfig={matchConfig}
+          matchConfig={currentScoreState.matchConfig}
           onScrollComplete={() => setScrollToIndex(undefined)}
+          onSeek={handleSeek}
         />
       )}
     </div>

@@ -10,6 +10,7 @@ interface PointsListProps {
   scrollToIndex?: number;
   matchConfig: MatchConfig;
   onScrollComplete?: () => void;
+  onSeek: (time: number) => void;
 }
 
 const formatTime = (time: number): string => {
@@ -18,7 +19,7 @@ const formatTime = (time: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const PointsList = ({ points, player1, player2, showInitialServer = false, scrollToIndex, matchConfig, onScrollComplete }: PointsListProps) => {
+const PointsList = ({ points, player1, player2, showInitialServer = false, scrollToIndex, matchConfig, onScrollComplete, onSeek }: PointsListProps) => {
   const pointRefs = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -88,7 +89,8 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
       <div 
         key={`point-${index}`} 
         ref={el => pointRefs.current[index] = el}
-        className="py-2 px-4 flex justify-between items-center hover:bg-gray-50"
+        className="py-2 px-4 flex justify-between items-center hover:bg-gray-50 cursor-pointer"
+        onClick={() => point.startTime && onSeek(point.startTime)}
       >
         <div className="text-sm text-gray-500">
           {formatTime(point.startTime!)} - {formatTime(point.endTime!)}
