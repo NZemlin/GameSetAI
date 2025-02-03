@@ -18,6 +18,9 @@ interface ScoreboardHeaderProps {
   onSetFirstServer: (playerNum: 1 | 2) => void;
   currentVideoTime: number;
   isTimeInExistingPoint: (time: number) => boolean;
+  showEditButton: boolean;
+  onEditClick: () => void;
+  onDeleteClick: () => void;
 }
 
 const ScoreboardHeader = ({
@@ -34,7 +37,10 @@ const ScoreboardHeader = ({
   onNameChange,
   onSetFirstServer,
   currentVideoTime,
-  isTimeInExistingPoint
+  isTimeInExistingPoint,
+  showEditButton,
+  onEditClick,
+  onDeleteClick
 }: ScoreboardHeaderProps) => {
   return (
     <div className="bg-white rounded-lg overflow-x-auto" style={{ boxShadow: '0 0 15px rgba(0, 0, 0, 0.1)' }}>
@@ -54,6 +60,9 @@ const ScoreboardHeader = ({
           onPointWinner={onPointWinner}
           currentVideoTime={currentVideoTime}
           isTimeInExistingPoint={isTimeInExistingPoint}
+          showEditButton={showEditButton}
+          onEditClick={onEditClick}
+          onDeleteClick={onDeleteClick}
         />
       )}
 

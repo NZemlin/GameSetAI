@@ -11,6 +11,7 @@ interface PointsListProps {
   matchConfig: MatchConfig;
   onScrollComplete?: () => void;
   onSeek: (time: number) => void;
+  isAutoScrolling: React.MutableRefObject<boolean>;
 }
 
 const formatTime = (time: number): string => {
@@ -19,7 +20,17 @@ const formatTime = (time: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const PointsList = ({ points, player1, player2, showInitialServer = false, scrollToIndex, matchConfig, onScrollComplete, onSeek }: PointsListProps) => {
+const PointsList = ({ 
+  points, 
+  player1, 
+  player2, 
+  showInitialServer = false, 
+  scrollToIndex, 
+  matchConfig, 
+  onScrollComplete,
+  onSeek,
+  isAutoScrolling
+}: PointsListProps) => {
   const pointRefs = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -37,6 +48,9 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
       const containerCenter = containerRect.top + (containerRect.height / 2);
       const offset = elementCenter - containerCenter;
       
+      // Set auto-scrolling flag before scrolling
+      isAutoScrolling.current = true;
+      
       // Add the offset to the current scroll position
       const newScrollTop = container.scrollTop + offset;
       
@@ -45,14 +59,15 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
         behavior: 'smooth'
       });
 
-      // Clear scroll index after animation completes
+      // Clear scroll index and auto-scrolling flag after animation completes
       const timeout = setTimeout(() => {
+        isAutoScrolling.current = false;
         onScrollComplete?.();
-      }, 1000); // Smooth scroll typically takes ~1s
+      }, 500); // Increased from 100ms to 500ms to match smooth scroll duration
 
       return () => clearTimeout(timeout);
     }
-  }, [scrollToIndex, onScrollComplete]);
+  }, [scrollToIndex, onScrollComplete, isAutoScrolling]);
 
   const getOrdinalSet = (index: number): string => {
     switch (index) {
@@ -178,7 +193,10 @@ const PointsList = ({ points, player1, player2, showInitialServer = false, scrol
   };
 
   return (
-    <div ref={containerRef} className="divide-y divide-gray-200">
+    <div 
+      ref={containerRef} 
+      className="divide-y divide-gray-200"
+    >
       {renderInitialServer(matchConfig)}
       {points.map((point, index) => renderPointItem(point, index))}
     </div>

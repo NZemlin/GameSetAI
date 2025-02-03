@@ -45,6 +45,14 @@
    - Time-based score display (shows score at current video time)
    - Synchronized scrolling between video and points list
    - Smart button disabling based on video position
+   - Toggle-based auto-scroll system with clear visual feedback
+   - Clean separation between manual and automatic scrolling modes
+   - Point editing with visual timeline editor
+   - Point deletion capability
+   - Point time overlap prevention
+   - Visual timeline markers for point start/end times
+   - Point winner modification
+   - Validation for point time boundaries
 
 ## In Progress
 1. **Video Processing**
@@ -55,10 +63,7 @@
 ## Next Steps
 1. **Score Tracking Enhancement**
    - Add match statistics view
-   - Create point editing interface
    - Develop match metadata storage
-   - Add undo/redo functionality for scoring
-   - Implement point deletion
 
 2. **Video Editor Enhancement**
    - Add frame-by-frame navigation

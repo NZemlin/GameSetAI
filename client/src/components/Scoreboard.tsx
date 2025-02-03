@@ -10,7 +10,8 @@ import { useServerManagement } from '../hooks/useServerManagement';
 import { usePointHandling } from '../hooks/usePointHandling';
 import ScoreboardHeader from './ScoreboardHeader';
 import PointsListSection from './PointsListSection';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import PointEditModal from './PointEditModal';
 
 interface ScoreboardComponentProps {
   onPlayerNamesChange: (player1: string, player2: string) => void;
@@ -52,7 +53,12 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
   } = usePointHandling(setPlayer1, setPlayer2, setMatchConfig, updateServerAfterTiebreak);
 
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
-  
+  const [editingPointIndex, setEditingPointIndex] = useState<number | null>(null);
+  const cooldownRef = useRef(false);
+  const [showEditButton, setShowEditButton] = useState(false);
+  const [currentPointIndex, setCurrentPointIndex] = useState<number | null>(null);
+  const [isVideoPaused, setIsVideoPaused] = useState(true);
+
   // Update video time and handle scrolling
   useEffect(() => {
     const video = videoRef.current;
@@ -145,9 +151,27 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     };
   }, [filteredPoints, matchConfig, player1, player2]);
 
+  // Update current point index based on video time
+  useEffect(() => {
+    if (cooldownRef.current) {
+      setShowEditButton(false);
+      return;
+    }
+
+    const index = chronologicalPoints.points.findIndex(point => 
+      point.startTime !== null &&
+      point.endTime !== null &&
+      currentVideoTime >= point.startTime &&
+      currentVideoTime <= point.endTime
+    );
+    setCurrentPointIndex(index);
+    setShowEditButton(index !== -1);
+  }, [currentVideoTime, chronologicalPoints.points]);
+
   // Helper to check if time is within existing points
-  const isTimeInExistingPoint = (time: number) => {
-    return chronologicalPoints.points.some(point => 
+  const isTimeInExistingPoint = (time: number, excludeIndex?: number) => {
+    return chronologicalPoints.points.some((point, index) => 
+      excludeIndex !== index &&
       point.startTime !== null &&
       point.endTime !== null &&
       time >= point.startTime &&
@@ -180,6 +204,10 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     if (!videoRef?.current || !currentPoint.startTime) return;
     const currentTime = videoRef.current.currentTime;
 
+    // Set cooldown before recording point
+    cooldownRef.current = true;
+    setShowEditButton(false);
+    
     // Validate time constraints
     if (currentTime <= currentPoint.startTime) {
       console.warn("End time must be after start time");
@@ -319,6 +347,11 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
       endTime: null,
       winner: null
     });
+
+    // Reset cooldown after 3 seconds
+    setTimeout(() => {
+      cooldownRef.current = false;
+    }, 3000);
   };
 
   const handleStartPoint = () => {
@@ -349,8 +382,124 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     }
   };
 
+  // Handle point updates
+  const updatePoint = (index: number, updatedPoint: Point) => {
+    const newPoints = [...chronologicalPoints.points];
+    newPoints[index] = updatedPoint;
+
+    // Recalculate scores from the beginning
+    const initialMatchConfig = {
+      ...matchConfig,
+      inTiebreak: false
+    };
+
+    const initialState = {
+      player1: { 
+        ...player1,
+        currentGame: 0,
+        currentSet: 0,
+        completedSets: [],
+        isServing: matchConfig.firstServer === 1
+      },
+      player2: { 
+        ...player2,
+        currentGame: 0,
+        currentSet: 0,
+        completedSets: [],
+        isServing: matchConfig.firstServer === 2
+      },
+      matchConfig: initialMatchConfig
+    };
+
+    const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig } = 
+      calculateScoreState(newPoints, initialState);
+
+    setPlayer1(newPlayer1);
+    setPlayer2(newPlayer2);
+    setMatchConfig(newMatchConfig);
+    setChronologicalPoints(prev => ({
+      ...prev,
+      points: newPoints
+    }));
+    setEditingPointIndex(null);
+  };
+
+  // Handle point deletion
+  const deletePoint = (index: number) => {
+    const newPoints = chronologicalPoints.points.filter((_, i) => i !== index);
+
+    // Recalculate scores from the beginning
+    const initialMatchConfig = {
+      ...matchConfig,
+      inTiebreak: false
+    };
+
+    const initialState = {
+      player1: { 
+        ...player1,
+        currentGame: 0,
+        currentSet: 0,
+        completedSets: [],
+        isServing: matchConfig.firstServer === 1
+      },
+      player2: { 
+        ...player2,
+        currentGame: 0,
+        currentSet: 0,
+        completedSets: [],
+        isServing: matchConfig.firstServer === 2
+      },
+      matchConfig: initialMatchConfig
+    };
+
+    const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig } = 
+      calculateScoreState(newPoints, initialState);
+
+    setPlayer1(newPlayer1);
+    setPlayer2(newPlayer2);
+    setMatchConfig(newMatchConfig);
+    setChronologicalPoints(prev => ({
+      ...prev,
+      points: newPoints
+    }));
+    setEditingPointIndex(null);
+  };
+
+  // Add video event listeners
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handlePlay = () => setIsVideoPaused(false);
+    const handlePause = () => setIsVideoPaused(true);
+    const handleTimeUpdate = () => setCurrentVideoTime(video.currentTime);
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('timeupdate', handleTimeUpdate);
+
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+    };
+  }, [videoRef]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {editingPointIndex !== null && (
+        <PointEditModal
+          point={chronologicalPoints.points[editingPointIndex]}
+          index={editingPointIndex}
+          onClose={() => setEditingPointIndex(null)}
+          onSave={updatePoint}
+          onDelete={deletePoint}
+          isTimeInExistingPoint={isTimeInExistingPoint}
+          videoRef={videoRef}
+          points={chronologicalPoints.points}
+        />
+      )}
+
       <ScoreboardHeader
         scoringStarted={scoringStarted}
         matchConfig={currentScoreState.matchConfig}
@@ -366,6 +515,9 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
         onSetFirstServer={setFirstServer}
         currentVideoTime={currentVideoTime}
         isTimeInExistingPoint={isTimeInExistingPoint}
+        showEditButton={showEditButton}
+        onEditClick={() => setEditingPointIndex(currentPointIndex)}
+        onDeleteClick={() => currentPointIndex !== null && deletePoint(currentPointIndex)}
       />
 
       {scoringStarted && (
@@ -373,12 +525,15 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
           expanded={pointsListExpanded}
           onExpandToggle={() => setPointsListExpanded(prev => !prev)}
           chronologicalPoints={chronologicalPoints}
-          player1={currentScoreState.player1}
-          player2={currentScoreState.player2}
+          player1={player1}
+          player2={player2}
           scrollToIndex={scrollToIndex}
-          matchConfig={currentScoreState.matchConfig}
+          setScrollToIndex={setScrollToIndex}
+          matchConfig={matchConfig}
           onScrollComplete={() => setScrollToIndex(undefined)}
           onSeek={handleSeek}
+          isVideoPaused={isVideoPaused}
+          currentVideoTime={currentVideoTime}
         />
       )}
     </div>
