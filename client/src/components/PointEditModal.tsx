@@ -38,8 +38,6 @@ const PointEditModal = ({
   const [endTime, setEndTime] = useState(point.endTime?.toFixed(2) || '');
   const [winner, setWinner] = useState<1 | 2 | null>(point.winner);
   const [errors, setErrors] = useState<string[]>([]);
-  const [originalStart] = useState(point.startTime || 0);
-  const [originalEnd] = useState(point.endTime || 0);
 
   const validate = () => {
     const newErrors: string[] = [];
@@ -76,6 +74,9 @@ const PointEditModal = ({
     }
   };
 
+  // Get video duration
+  const videoDuration = videoRef.current?.duration || 0;
+
   return (
     <div className="fixed inset-y-0 right-0 bg-black bg-opacity-50 flex items-center p-4 z-50">
       <div className="bg-white rounded-lg p-6 w-[500px] shadow-xl">
@@ -87,20 +88,20 @@ const PointEditModal = ({
           </div>
         )}
 
-        <TimelineEditor
-          videoRef={videoRef}
-          startTime={parseFloat(startTime)}
-          endTime={parseFloat(endTime)}
-          onStartTimeChange={(time) => setStartTime(time.toFixed(2))}
-          onEndTimeChange={(time) => setEndTime(time.toFixed(2))}
-          maxDuration={videoRef.current?.duration || 0}
-          isTimeInExistingPoint={isTimeInExistingPoint}
-          currentPointIndex={index}
-          originalStart={originalStart}
-          originalEnd={originalEnd}
-          points={points}
-          index={index}
-        />
+        {videoDuration > 0 && (
+          <TimelineEditor
+            key={`timeline-editor-${index}`}
+            videoRef={videoRef}
+            startTime={parseFloat(startTime)}
+            endTime={parseFloat(endTime)}
+            onStartTimeChange={(time) => setStartTime(time.toFixed(2))}
+            onEndTimeChange={(time) => setEndTime(time.toFixed(2))}
+            maxDuration={videoDuration}
+            isTimeInExistingPoint={isTimeInExistingPoint}
+            points={points}
+            index={index}
+          />
+        )}
 
         <div className="mt-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">

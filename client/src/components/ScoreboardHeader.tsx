@@ -14,13 +14,19 @@ interface ScoreboardHeaderProps {
   currentPoint: Point;
   onStartPoint: () => void;
   onPointWinner: (winner: 1 | 2) => void;
-  onNameChange: (playerNum: 1 | 2, name: string) => void;
-  onSetFirstServer: (playerNum: 1 | 2) => void;
+  onNameChange: (player: 1 | 2, name: string) => void;
+  onSetFirstServer: (player: 1 | 2) => void;
   currentVideoTime: number;
-  isTimeInExistingPoint: (time: number) => boolean;
+  isTimeInExistingPoint: (time: number, excludeIndex?: number) => boolean;
   showEditButton: boolean;
   onEditClick: () => void;
   onDeleteClick: () => void;
+  isEditing: boolean;
+  editingPoint: Point | null;
+  onSaveEdit: (index: number, updatedPoint: Point) => void;
+  videoRef: React.RefObject<HTMLVideoElement>;
+  points: Point[];
+  editingPointIndex: number | null;
 }
 
 const ScoreboardHeader = ({
@@ -40,7 +46,13 @@ const ScoreboardHeader = ({
   isTimeInExistingPoint,
   showEditButton,
   onEditClick,
-  onDeleteClick
+  onDeleteClick,
+  isEditing,
+  editingPoint,
+  onSaveEdit,
+  videoRef,
+  points,
+  editingPointIndex
 }: ScoreboardHeaderProps) => {
   return (
     <div className="bg-white rounded-lg overflow-x-auto" style={{ boxShadow: '0 0 15px rgba(0, 0, 0, 0.1)' }}>
@@ -63,6 +75,12 @@ const ScoreboardHeader = ({
           showEditButton={showEditButton}
           onEditClick={onEditClick}
           onDeleteClick={onDeleteClick}
+          isEditing={isEditing}
+          editingPoint={editingPoint}
+          onSaveEdit={onSaveEdit}
+          videoRef={videoRef}
+          points={points}
+          editingPointIndex={editingPointIndex}
         />
       )}
 

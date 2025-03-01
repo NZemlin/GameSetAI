@@ -1,5 +1,7 @@
 import { Player, Point } from '../types/scoreboard';
 import { getDisplayName } from '../utils/scoreHandlers';
+import { useState, useEffect } from 'react';
+import PointEditTimeline from './PointEditTimeline';
 
 interface ScoringControlsProps {
   player1: Player;
@@ -8,10 +10,16 @@ interface ScoringControlsProps {
   onStartPoint: () => void;
   onPointWinner: (winner: 1 | 2) => void;
   currentVideoTime: number;
-  isTimeInExistingPoint: (time: number) => boolean;
+  isTimeInExistingPoint: (time: number, excludeIndex?: number) => boolean;
   showEditButton: boolean;
   onEditClick: () => void;
   onDeleteClick: () => void;
+  isEditing: boolean;
+  editingPoint: Point | null;
+  onSaveEdit: (index: number, updatedPoint: Point) => void;
+  videoRef: React.RefObject<HTMLVideoElement>;
+  points: Point[];
+  editingPointIndex: number | null;
 }
 
 const ScoringControls = ({
@@ -24,12 +32,200 @@ const ScoringControls = ({
   isTimeInExistingPoint,
   showEditButton,
   onEditClick,
-  onDeleteClick
+  onDeleteClick,
+  isEditing,
+  editingPoint,
+  onSaveEdit,
+  videoRef,
+  points,
+  editingPointIndex
 }: ScoringControlsProps) => {
   const noServerSelected = !player1.isServing && !player2.isServing;
   const inExistingPoint = isTimeInExistingPoint(currentVideoTime);
   const invalidEndTime = currentPoint.startTime !== null && currentVideoTime <= currentPoint.startTime;
   const winnerButtonsDisabled = currentPoint.startTime === null || invalidEndTime || inExistingPoint;
+
+  // Point editing state
+  const [editedStartTime, setEditedStartTime] = useState(0);
+  const [editedEndTime, setEditedEndTime] = useState(0);
+  const [originalEditPoint, setOriginalEditPoint] = useState<Point | null>(null);
+  const [lockedIndex, setLockedIndex] = useState<number | null>(null);
+  const [winner, setWinner] = useState<1 | 2 | null>(editingPoint?.winner || null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [videoReady, setVideoReady] = useState(false);
+
+  // Update effect to handle video duration updates and winner initialization
+  useEffect(() => {
+    if (!isEditing || !editingPoint) return;
+
+    // Set winner when editing starts
+    setWinner(editingPoint.winner);
+
+    if (!videoRef.current) return;
+
+    const video = videoRef.current;
+    const updateDuration = () => {
+      const duration = video.duration || 0;
+      if (duration > 0) {
+        setVideoReady(true);
+        setEditedStartTime(Math.min(editingPoint.startTime || 0, duration));
+        setEditedEndTime(Math.min(editingPoint.endTime || 0, duration));
+      }
+    };
+
+    if (video.readyState > 0) {
+      updateDuration();
+    } else {
+      video.addEventListener('loadedmetadata', updateDuration);
+    }
+
+    return () => {
+      video.removeEventListener('loadedmetadata', updateDuration);
+    };
+  }, [isEditing, editingPoint, videoRef, setEditedStartTime, setEditedEndTime]);
+
+  useEffect(() => {
+    if (editingPoint) {
+      // Keep this critical log for when editing begins
+      console.log(`[EDIT] Started editing point index ${editingPointIndex}`);
+      
+      setOriginalEditPoint(editingPoint);
+      setLockedIndex(editingPointIndex);
+      setEditedStartTime(editingPoint.startTime || 0);
+      setEditedEndTime(editingPoint.endTime || 0);
+      
+      // Set winner when editing starts
+      setWinner(editingPoint.winner);
+    } else {
+      setLockedIndex(null);
+    }
+  }, [editingPoint, editingPointIndex]);
+
+  const validate = () => {
+    const newErrors: string[] = [];
+    if (editedStartTime >= editedEndTime) {
+      newErrors.push('End time must be after start time');
+    }
+    if (!winner) {
+      newErrors.push('Must select a winner');
+    }
+
+    setErrors(newErrors);
+    return newErrors.length === 0;
+  };
+
+  const handleSave = () => {
+    if (!editingPoint || !originalEditPoint || !validate()) return;
+
+    // Keep this critical log for when saving edits
+    console.log(`[EDIT] Saving point ${lockedIndex}`);
+
+    // Use the locked index directly since we know it's valid
+    if (lockedIndex !== null) {
+      onSaveEdit(lockedIndex, {
+        ...editingPoint,
+        startTime: editedStartTime,
+        endTime: editedEndTime,
+        winner: winner!
+      });
+    }
+    
+    setOriginalEditPoint(null);
+    setLockedIndex(null);
+  };
+
+  if (isEditing && editingPoint) {
+    const maxDuration = videoRef.current?.duration || 0;
+    
+    // Find chronologically adjacent points by time, not by array position
+    const otherPoints = points.filter((_, i) => i !== editingPointIndex);
+    
+    let previousPoint = null;
+    let nextPoint = null;
+    
+    // Find the closest previous point (ends before our start time)
+    let maxPreviousEndTime = 0;
+    for (const point of otherPoints) {
+      if (point.endTime != null && point.endTime <= editedStartTime && point.endTime > maxPreviousEndTime) {
+        maxPreviousEndTime = point.endTime;
+        previousPoint = point;
+      }
+    }
+    
+    // Find the closest next point (starts after our end time)
+    let minNextStartTime = Infinity;
+    for (const point of otherPoints) {
+      if (point.startTime != null && point.startTime >= editedEndTime && point.startTime < minNextStartTime) {
+        minNextStartTime = point.startTime;
+        nextPoint = point;
+      }
+    }
+    
+    // Create wrapper functions but remove excessive logging
+    const handleStartTimeChange = (time: number) => {
+      // Only log significant changes (optional)
+      setEditedStartTime(time);
+    };
+
+    const handleEndTimeChange = (time: number) => {
+      // Only log significant changes (optional)
+      setEditedEndTime(time);
+    };
+
+    return (
+      <div className="p-4 border-b border-gray-200">
+        <h3 className="text-lg font-medium mb-4">Edit Point</h3>
+        
+        {errors.length > 0 && (
+          <div className="mb-4 text-red-600">
+            {errors.map((e, i) => <div key={i}>• {e}</div>)}
+          </div>
+        )}
+
+        {videoReady && maxDuration > 0 ? (
+          <PointEditTimeline
+            key={`point-edit-timeline-${editingPointIndex}-${editingPoint.startTime}-${editingPoint.endTime}`}
+            point={{
+              ...editingPoint,
+              startTime: editedStartTime,
+              endTime: editedEndTime
+            }}
+            videoDuration={maxDuration}
+            previousPointEndTime={previousPoint?.endTime ?? null}
+            nextPointStartTime={nextPoint?.startTime ?? null}
+            onStartTimeChange={handleStartTimeChange}
+            onEndTimeChange={handleEndTimeChange}
+          />
+        ) : (
+          <div className="mt-4 text-gray-500">Loading video duration...</div>
+        )}
+
+        <div className="mt-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Winner</label>
+            <select
+              value={winner || ''}
+              onChange={(e) => setWinner(parseInt(e.target.value) as 1 | 2)}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-gray-900"
+            >
+              <option value="">Select Winner</option>
+              <option value="1">{getDisplayName(player1, "Player 1")}</option>
+              <option value="2">{getDisplayName(player2, "Player 2")}</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              onClick={handleSave}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 border-b border-gray-200 h-[72px] flex items-center">

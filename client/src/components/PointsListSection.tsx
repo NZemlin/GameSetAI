@@ -52,40 +52,43 @@ const PointsListSection = ({
 
   return (
     <div className="bg-white rounded-lg mt-4" style={{ boxShadow: '0 0 15px rgba(0, 0, 0, 0.1)' }}>
-      <button
-        onClick={onExpandToggle}
-        className="w-full px-2 py-0.5 flex items-center justify-center text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none relative"
-      >
-        {expanded ? (
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
-          </svg>
-        ) : (
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 15l7-7 7 7" />
-          </svg>
-        )}
-        {expanded && !isVideoPaused && (
+      <div className="flex items-center justify-between px-2">
+        <div className="w-[26px]" />
+        <button
+          onClick={onExpandToggle}
+          className="px-2 py-0.5 flex items-center justify-center text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none"
+        >
+          {expanded ? (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          ) : (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 15l7-7 7 7" />
+            </svg>
+          )}
+        </button>
+        {expanded && !isVideoPaused ? (
           <button 
             onClick={(e) => {
               e.stopPropagation();
               setAutoScrollEnabled(!autoScrollEnabled);
             }}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 backdrop-blur-sm rounded-md p-0.5 text-gray-500 shadow-sm ring-1 ring-gray-200/50 cursor-pointer hover:bg-white hover:text-gray-600 transition-colors flex items-center gap-1.5 focus:outline-none"
+            className="w-[26px] bg-white/90 backdrop-blur-sm rounded-md p-0.5 text-gray-500 shadow-sm ring-1 ring-gray-200/50 cursor-pointer hover:bg-white hover:text-gray-600 transition-colors flex items-center justify-center focus:outline-none"
             title={autoScrollEnabled ? "Disable auto-scroll" : "Enable auto-scroll"}
           >
             <svg className="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               {autoScrollEnabled ? (
-                // Locked
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               ) : (
-                // Unlocked
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               )}
             </svg>
           </button>
+        ) : (
+          <div className="w-[26px]" />
         )}
-      </button>
+      </div>
       {expanded && (
         <div className="relative">
           <div 

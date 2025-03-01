@@ -11,7 +11,6 @@ import { usePointHandling } from '../hooks/usePointHandling';
 import ScoreboardHeader from './ScoreboardHeader';
 import PointsListSection from './PointsListSection';
 import { useEffect, useState, useMemo, useRef } from 'react';
-import PointEditModal from './PointEditModal';
 
 interface ScoreboardComponentProps {
   onPlayerNamesChange: (player1: string, player2: string) => void;
@@ -56,10 +55,11 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
   const [editingPointIndex, setEditingPointIndex] = useState<number | null>(null);
   const cooldownRef = useRef(false);
   const [showEditButton, setShowEditButton] = useState(false);
-  const [currentPointIndex, setCurrentPointIndex] = useState<number | null>(null);
   const [isVideoPaused, setIsVideoPaused] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingPoint, setEditingPoint] = useState<Point | null>(null);
 
-  // Update video time and handle scrolling
+  // Update video time and calculate current point index
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -91,7 +91,6 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
       }
     };
 
-    // Listen for both timeupdate and seeked events
     video.addEventListener('timeupdate', updateTime);
     video.addEventListener('seeked', updateTime);
     
@@ -99,7 +98,31 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
       video.removeEventListener('timeupdate', updateTime);
       video.removeEventListener('seeked', updateTime);
     };
-  }, [videoRef, chronologicalPoints.points, setScrollToIndex]);
+  }, [videoRef, chronologicalPoints.points, setScrollToIndex, setCurrentVideoTime]);
+
+  // Update editing index and edit button visibility
+  useEffect(() => {
+    if (!videoRef.current || isEditing) return;
+
+    const currentTime = videoRef.current.currentTime;
+    
+    // Find the point that contains the current time
+    const pointIndex = chronologicalPoints.points.findIndex(point => 
+      point.startTime !== null &&
+      point.endTime !== null &&
+      currentTime >= point.startTime &&
+      currentTime <= point.endTime
+    );
+
+    // Update editing state
+    if (pointIndex !== -1) {
+      setEditingPointIndex(pointIndex);
+      setShowEditButton(true);
+    } else {
+      setEditingPointIndex(null);
+      setShowEditButton(false);
+    }
+  }, [currentVideoTime, chronologicalPoints.points, isEditing, videoRef, setEditingPointIndex, setShowEditButton]);
 
   // Filter points up to current video time
   const filteredPoints = useMemo(() => {
@@ -150,34 +173,6 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
       matchConfig: currentMatchConfig
     };
   }, [filteredPoints, matchConfig, player1, player2]);
-
-  // Update current point index based on video time
-  useEffect(() => {
-    if (cooldownRef.current) {
-      setShowEditButton(false);
-      return;
-    }
-
-    const index = chronologicalPoints.points.findIndex(point => 
-      point.startTime !== null &&
-      point.endTime !== null &&
-      currentVideoTime >= point.startTime &&
-      currentVideoTime <= point.endTime
-    );
-    setCurrentPointIndex(index);
-    setShowEditButton(index !== -1);
-  }, [currentVideoTime, chronologicalPoints.points]);
-
-  // Helper to check if time is within existing points
-  const isTimeInExistingPoint = (time: number, excludeIndex?: number) => {
-    return chronologicalPoints.points.some((point, index) => 
-      excludeIndex !== index &&
-      point.startTime !== null &&
-      point.endTime !== null &&
-      time >= point.startTime &&
-      time <= point.endTime
-    );
-  };
 
   // Notify parent component when points change
   useEffect(() => {
@@ -384,6 +379,9 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
 
   // Handle point updates
   const updatePoint = (index: number, updatedPoint: Point) => {
+    // Keep minimal logging for important operations
+    console.log(`[POINT] Updating point ${index}`);
+    
     const newPoints = [...chronologicalPoints.points];
     newPoints[index] = updatedPoint;
 
@@ -426,6 +424,9 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
 
   // Handle point deletion
   const deletePoint = (index: number) => {
+    // Keep minimal logging for important operations
+    console.log(`[POINT] Deleting point ${index}`);
+    
     const newPoints = chronologicalPoints.points.filter((_, i) => i !== index);
 
     // Recalculate scores from the beginning
@@ -485,21 +486,67 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     };
   }, [videoRef]);
 
+  const handleEditClick = () => {
+    if (!videoRef.current || editingPointIndex === null) return;
+    
+    // Disable editing mode first to ensure clean state
+    setIsEditing(false);
+    setEditingPoint(null);
+    
+    // Get the point data
+    const pointToEdit = chronologicalPoints.points[editingPointIndex];
+    
+    // Keep one concise log for the edit action
+    console.log(`[EDIT] Starting edit for point ${editingPointIndex}`);
+    
+    // Use a small timeout to ensure React has time to process the state changes
+    // This is a common technique for handling tricky state update sequences
+    setTimeout(() => {
+      // First set the point data
+      setEditingPoint(pointToEdit);
+      
+      // Then enable editing mode after the point data is set
+      // This small delay ensures the correct sequence of updates
+      setTimeout(() => {
+        setIsEditing(true);
+      }, 10);
+    }, 10);
+  };
+
+  const handleSaveEdit = (index: number, updatedPoint: Point) => {
+    // Keep minimal logging for important operations
+    console.log(`[EDIT] Finished editing point ${index}`);
+    updatePoint(index, updatedPoint);
+    setIsEditing(false);
+    setEditingPoint(null);
+  };
+
+  const handleDeleteClick = () => {
+    if (editingPointIndex === null) return;
+    // Keep minimal logging for important operations
+    console.log(`[EDIT] Deleting point ${editingPointIndex}`);
+    deletePoint(editingPointIndex);
+    setIsEditing(false);
+    setEditingPoint(null);
+    setEditingPointIndex(null);
+  };
+
+  // Helper to check if time is within existing points
+  const isTimeInExistingPoint = (time: number, excludeIndex?: number) => {
+    return chronologicalPoints.points.some((point, index) => {
+      // Skip if this is the point we're excluding
+      if (excludeIndex !== undefined && excludeIndex === index) {
+        return false;
+      }
+      return point.startTime !== null &&
+        point.endTime !== null &&
+        time >= point.startTime &&
+        time <= point.endTime;
+    });
+  };
+
   return (
     <div className="flex flex-col h-full relative">
-      {editingPointIndex !== null && (
-        <PointEditModal
-          point={chronologicalPoints.points[editingPointIndex]}
-          index={editingPointIndex}
-          onClose={() => setEditingPointIndex(null)}
-          onSave={updatePoint}
-          onDelete={deletePoint}
-          isTimeInExistingPoint={isTimeInExistingPoint}
-          videoRef={videoRef}
-          points={chronologicalPoints.points}
-        />
-      )}
-
       <ScoreboardHeader
         scoringStarted={scoringStarted}
         matchConfig={currentScoreState.matchConfig}
@@ -516,8 +563,14 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
         currentVideoTime={currentVideoTime}
         isTimeInExistingPoint={isTimeInExistingPoint}
         showEditButton={showEditButton}
-        onEditClick={() => setEditingPointIndex(currentPointIndex)}
-        onDeleteClick={() => currentPointIndex !== null && deletePoint(currentPointIndex)}
+        onEditClick={handleEditClick}
+        onDeleteClick={handleDeleteClick}
+        isEditing={isEditing}
+        editingPoint={editingPoint}
+        onSaveEdit={handleSaveEdit}
+        videoRef={videoRef}
+        points={chronologicalPoints.points}
+        editingPointIndex={editingPointIndex}
       />
 
       {scoringStarted && (
