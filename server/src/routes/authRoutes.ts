@@ -1,16 +1,27 @@
-import { Router, RequestHandler } from 'express';
-import { signup, login, requestPasswordReset, resetPassword, logout } from '../controllers/authController';
-import { authenticateToken } from '../middleware/authMiddleware';
+import express from 'express';
+import { login, signup, requestPasswordReset, resetPassword, logout, validateToken, getProfile } from '../controllers/authController';
 
-const router = Router();
+const router = express.Router();
 
-// Public routes
-router.post('/signup', (signup as unknown) as RequestHandler);
-router.post('/login', (login as unknown) as RequestHandler);
-router.post('/password-reset-request', (requestPasswordReset as unknown) as RequestHandler);
-router.post('/password-reset', (resetPassword as unknown) as RequestHandler);
+// POST /api/auth/login - User login
+router.post('/login', login);
 
-// Protected routes
-router.post('/logout', authenticateToken, (logout as unknown) as RequestHandler);
+// POST /api/auth/signup - User signup
+router.post('/signup', signup);
 
-export default router; 
+// POST /api/auth/password-reset-request - Request password reset
+router.post('/password-reset-request', requestPasswordReset);
+
+// POST /api/auth/reset-password - Reset password
+router.post('/reset-password', resetPassword);
+
+// POST /api/auth/logout - Logout
+router.post('/logout', logout);
+
+// GET /api/auth/validate-token - Validate JWT token
+router.get('/validate-token', validateToken);
+
+// GET /api/auth/profile - Get user profile
+router.get('/profile', getProfile);
+
+export default router;

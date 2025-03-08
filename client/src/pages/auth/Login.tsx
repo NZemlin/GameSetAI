@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../../utils/supabase';
+import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -8,38 +8,39 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-
+  
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const response = await axios.post('http://localhost:3000/api/auth/login', {
         email,
         password,
       });
-
-      if (signInError) throw signInError;
-
-      // Get the redirect path from location state, or default to dashboard
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
-      navigate(from);
+  
+      console.log('Login response in Login:', response.data);
+      const token = response.data.token;
+      console.log('Storing token in localStorage:', token);
+      localStorage.setItem('token', token);
+  
+      // Always redirect to /dashboard after successful login
+      navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred');
-      }
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.error || 'Login failed'
+          : 'An unexpected error occurred'
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center py-12 px-4">
+      <div className="w-full max-w-md space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Sign in to your account
@@ -118,4 +119,4 @@ const Login = () => {
   );
 };
 
-export default Login; 
+export default Login;

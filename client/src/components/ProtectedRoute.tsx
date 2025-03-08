@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { supabase } from '../utils/supabase';
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -14,9 +14,26 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setIsAuthenticated(!!session);
-      } catch {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setIsAuthenticated(false);
+          return;
+        }
+
+        // Validate the token with your backend
+        const response = await axios.get('http://localhost:3000/api/auth/validate-token', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.data.message === 'Token is valid') {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
+        console.error('Token validation failed:', error);
         setIsAuthenticated(false);
       } finally {
         setIsLoading(false);
@@ -41,4 +58,4 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   return <>{children}</>;
 };
 
-export default ProtectedRoute; 
+export default ProtectedRoute;

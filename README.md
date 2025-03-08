@@ -1,50 +1,120 @@
-# React + TypeScript + Vite
+# GameSetAI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A video analysis and editing platform for tennis matches, featuring video processing, scorekeeping, and clip creation capabilities.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Video Upload & Management**: Upload and organize tennis match videos
+- **Scoring System**: Track match scores and points
+- **Clip Creation**: Extract and save important moments from matches
+- **Match Highlight Export**: Compile key points into highlight videos
+- **Video Timeline**: Navigate through match videos with timestamps
 
-## Expanding the ESLint configuration
+## Prerequisites
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+- Node.js (v16 or higher)
+- npm or yarn
+- FFmpeg (required for video processing features)
 
-- Configure the top-level `parserOptions` property like this:
+## Installation
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+### Clone the repository
+
+```bash
+git clone <repository-url>
+cd GameSetAI
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+### Install dependencies for the server
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
-
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
+```bash
+cd server
+npm install
 ```
+
+### Install dependencies for the client
+
+```bash
+cd ../client
+npm install
+```
+
+### FFmpeg Installation
+
+For full video processing capabilities, FFmpeg must be installed on your system and available in your PATH.
+
+#### Windows Installation
+
+1. Download the FFmpeg build from the [official website](https://ffmpeg.org/download.html) or use a package manager like [Chocolatey](https://chocolatey.org/):
+   ```
+   choco install ffmpeg
+   ```
+
+2. Add FFmpeg to your PATH environment variable:
+   - Right-click on "This PC" and select "Properties"
+   - Click on "Advanced system settings"
+   - Click on "Environment Variables"
+   - Under "System variables", find the "Path" variable and click "Edit"
+   - Click "New" and add the path to the FFmpeg bin directory (e.g., `C:\Program Files\FFmpeg\bin`)
+   - Click "OK" to close all dialogs
+
+#### macOS Installation
+
+Using Homebrew:
+```
+brew install ffmpeg
+```
+
+#### Linux Installation
+
+Debian/Ubuntu:
+```
+sudo apt update
+sudo apt install ffmpeg
+```
+
+RedHat/CentOS:
+```
+sudo yum install ffmpeg
+```
+
+### Verify FFmpeg Installation
+
+After installation, verify FFmpeg is correctly installed by running:
+```
+ffmpeg -version
+```
+
+## Running the Application
+
+### Start the server
+
+```bash
+cd server
+npm run dev
+```
+
+The server will run on http://localhost:3000 by default.
+
+### Start the client
+
+```bash
+cd client
+npm run dev
+```
+
+The client will run on http://localhost:5173 by default.
+
+## Usage
+
+1. Access the web application at http://localhost:5173
+2. Upload tennis match videos
+3. Score points and track match progress
+4. Create clips of key moments
+5. Export highlight compilations
+
+## Development Notes
+
+- The application includes fallback functionality when FFmpeg is not installed, but video processing features will be limited.
+- Without FFmpeg, clip "creation" will only store metadata and reference the original video files.
+- Full video processing (trimming, compiling, etc.) requires FFmpeg to be properly installed.

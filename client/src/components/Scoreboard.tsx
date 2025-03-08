@@ -12,13 +12,34 @@ import ScoreboardHeader from './ScoreboardHeader';
 import PointsListSection from './PointsListSection';
 import { useEffect, useState, useMemo, useRef } from 'react';
 
+// Define the persisted config interface to match what's defined in VideoEdit
+interface PersistedMatchConfig {
+  type: 'match' | 'tiebreak' | null;
+  tiebreakPoints: 7 | 10;
+  noAd: boolean;
+  firstServer: 1 | 2 | null;
+  isConfigured: boolean;
+}
+
 interface ScoreboardComponentProps {
   onPlayerNamesChange: (player1: string, player2: string) => void;
   videoRef: React.RefObject<HTMLVideoElement>;
   onPointsChange?: (points: Point[]) => void;
+  playerNames?: {player1: string, player2: string};
+  matchConfig?: PersistedMatchConfig;
+  onMatchConfigChange?: (config: Partial<PersistedMatchConfig>) => void;
+  initialPoints?: Point[];
 }
 
-const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: ScoreboardComponentProps) => {
+const Scoreboard = ({ 
+  onPlayerNamesChange, 
+  videoRef, 
+  onPointsChange,
+  playerNames,
+  matchConfig: parentMatchConfig,
+  onMatchConfigChange,
+  initialPoints
+}: ScoreboardComponentProps) => {
   const {
     player1,
     setPlayer1,
@@ -38,6 +59,85 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     setScrollToIndex,
     handleNameChange
   } = useScoreboardState(onPlayerNamesChange);
+
+  // Track whether initialization has occurred
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initialize state from props if provided
+  useEffect(() => {
+    if (playerNames) {
+      setPlayer1(prev => ({ ...prev, name: playerNames.player1 }));
+      setPlayer2(prev => ({ ...prev, name: playerNames.player2 }));
+    }
+  }, [playerNames, setPlayer1, setPlayer2]);
+
+  // Initialize match configuration from props if provided
+  useEffect(() => {
+    if (parentMatchConfig?.isConfigured && !isInitialized) {
+      // Only update matchConfig if it has changed
+      setMatchConfig(prev => {
+        const newConfig = {
+          ...prev,
+          type: parentMatchConfig.type,
+          tiebreakPoints: parentMatchConfig.tiebreakPoints,
+          noAd: parentMatchConfig.noAd,
+          firstServer: parentMatchConfig.firstServer
+        };
+        // Avoid update if the config is the same
+        if (
+          prev.type === newConfig.type &&
+          prev.tiebreakPoints === newConfig.tiebreakPoints &&
+          prev.noAd === newConfig.noAd &&
+          prev.firstServer === newConfig.firstServer
+        ) {
+          return prev;
+        }
+        return newConfig;
+      });
+
+      // Update player serving state only if necessary
+      setPlayer1(prev => {
+        const shouldServe = parentMatchConfig.firstServer === 1;
+        if (prev.isServing === shouldServe) return prev;
+        return { ...prev, isServing: shouldServe };
+      });
+
+      setPlayer2(prev => {
+        const shouldServe = parentMatchConfig.firstServer === 2;
+        if (prev.isServing === shouldServe) return prev;
+        return { ...prev, isServing: shouldServe };
+      });
+
+      // Only set scoringStarted if it's not already true
+      setScoringStarted(prev => (prev ? prev : true));
+
+      // Mark initialization as complete
+      setIsInitialized(true);
+    }
+  }, [parentMatchConfig, isInitialized, setMatchConfig, setPlayer1, setPlayer2, setScoringStarted]);
+
+  // Initialize points from props if provided
+  useEffect(() => {
+    if (initialPoints && initialPoints.length > 0) {
+      setChronologicalPoints({
+        points: initialPoints,
+        currentIndex: initialPoints.length - 1
+      });
+    }
+  }, [initialPoints, setChronologicalPoints]);
+
+  // Sync match config changes back to parent
+  useEffect(() => {
+    if (onMatchConfigChange && scoringStarted) {
+      onMatchConfigChange({
+        type: matchConfig.type,
+        tiebreakPoints: matchConfig.tiebreakPoints,
+        noAd: matchConfig.noAd,
+        firstServer: matchConfig.firstServer,
+        isConfigured: true
+      });
+    }
+  }, [matchConfig, scoringStarted, onMatchConfigChange]);
 
   const {
     switchServer,
@@ -59,36 +159,49 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
   const [isEditing, setIsEditing] = useState(false);
   const [editingPoint, setEditingPoint] = useState<Point | null>(null);
 
-  // Update video time and calculate current point index
+  // Memoize chronologicalPoints.points to prevent unnecessary reference changes
+  const points = useMemo(() => chronologicalPoints.points, [chronologicalPoints.points]);
+
+  // Update video time and calculate current point index (with debouncing)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
+    let timeoutId: NodeJS.Timeout;
     const updateTime = () => {
       const currentTime = video.currentTime;
-      setCurrentVideoTime(currentTime);
       
-      // Find point that contains current time
-      const pointIndex = chronologicalPoints.points.findIndex(point => 
-        point.startTime !== null &&
-        point.endTime !== null &&
-        currentTime >= point.startTime &&
-        currentTime <= point.endTime
-      );
-
-      // If not found in a point's range, find the last point that starts before current time
-      const lastPointBeforeTime = [...chronologicalPoints.points]
-        .reverse()
-        .findIndex((point: Point) => 
-          point.startTime !== null && point.startTime <= currentTime
+      // Debounce the setCurrentVideoTime update
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        setCurrentVideoTime(currentTime);
+        
+        // Find point that contains current time
+        const pointIndex = points.findIndex(point => 
+          point.startTime !== null &&
+          point.endTime !== null &&
+          currentTime >= point.startTime &&
+          currentTime <= point.endTime
         );
-      
-      const targetIndex = pointIndex !== -1 ? pointIndex : 
-        (lastPointBeforeTime !== -1 ? chronologicalPoints.points.length - 1 - lastPointBeforeTime : -1);
 
-      if (targetIndex !== -1) {
-        setScrollToIndex(targetIndex);
-      }
+        // If not found in a point's range, find the last point that starts before current time
+        const lastPointBeforeTime = [...points]
+          .reverse()
+          .findIndex((point: Point) => 
+            point.startTime !== null && point.startTime <= currentTime
+        );
+        
+        const targetIndex = pointIndex !== -1 ? pointIndex : 
+          (lastPointBeforeTime !== -1 ? points.length - 1 - lastPointBeforeTime : -1);
+
+        // Only update scrollToIndex if it has changed
+        setScrollToIndex(prev => {
+          if (prev !== targetIndex && targetIndex !== -1) {
+            return targetIndex;
+          }
+          return prev;
+        });
+      }, 100); // Debounce by 100ms
     };
 
     video.addEventListener('timeupdate', updateTime);
@@ -97,40 +210,55 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     return () => {
       video.removeEventListener('timeupdate', updateTime);
       video.removeEventListener('seeked', updateTime);
+      clearTimeout(timeoutId);
     };
-  }, [videoRef, chronologicalPoints.points, setScrollToIndex, setCurrentVideoTime]);
+  }, [videoRef, points, setScrollToIndex]);
 
-  // Update editing index and edit button visibility
+  // Update editing index and edit button visibility (with debouncing and state checks)
   useEffect(() => {
     if (!videoRef.current || isEditing) return;
 
     const currentTime = videoRef.current.currentTime;
     
-    // Find the point that contains the current time
-    const pointIndex = chronologicalPoints.points.findIndex(point => 
-      point.startTime !== null &&
-      point.endTime !== null &&
-      currentTime >= point.startTime &&
-      currentTime <= point.endTime
-    );
+    // Debounce the state updates to prevent infinite loop
+    const timeoutId = setTimeout(() => {
+      // Find the point that contains the current time
+      const pointIndex = points.findIndex(point => 
+        point.startTime !== null &&
+        point.endTime !== null &&
+        currentTime >= point.startTime &&
+        currentTime <= point.endTime
+      );
 
-    // Update editing state
-    if (pointIndex !== -1) {
-      setEditingPointIndex(pointIndex);
-      setShowEditButton(true);
-    } else {
-      setEditingPointIndex(null);
-      setShowEditButton(false);
-    }
-  }, [currentVideoTime, chronologicalPoints.points, isEditing, videoRef, setEditingPointIndex, setShowEditButton]);
+      // Update editing state only if necessary
+      setEditingPointIndex(prevIndex => {
+        const newIndex = pointIndex !== -1 ? pointIndex : null;
+        if (prevIndex !== newIndex) {
+          return newIndex;
+        }
+        return prevIndex; // Avoid update if unchanged
+      });
+
+      setShowEditButton(prev => {
+        const shouldShow = pointIndex !== -1;
+        if (prev !== shouldShow) {
+          return shouldShow;
+        }
+        return prev; // Avoid update if unchanged
+      });
+    }, 100); // Delay updates by 100ms
+
+    // Cleanup the timeout on effect re-run or unmount
+    return () => clearTimeout(timeoutId);
+  }, [currentVideoTime, points, isEditing, videoRef]);
 
   // Filter points up to current video time
   const filteredPoints = useMemo(() => {
-    return chronologicalPoints.points.filter(point => 
+    return points.filter(point => 
       point.endTime !== null && 
       point.endTime <= currentVideoTime
     );
-  }, [chronologicalPoints.points, currentVideoTime]);
+  }, [points, currentVideoTime]);
 
   // Calculate current score based on filtered points
   const currentScoreState = useMemo(() => {
@@ -176,8 +304,8 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
 
   // Notify parent component when points change
   useEffect(() => {
-    onPointsChange?.(chronologicalPoints.points);
-  }, [chronologicalPoints.points, onPointsChange]);
+    onPointsChange?.(points);
+  }, [points, onPointsChange]);
 
   const calculateDivider = (state: { player1: Player, player2: Player, matchConfig: MatchConfig }) => {
     let divider: Point['divider'] = undefined;
@@ -226,14 +354,14 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     };
 
     // Find insertion point based on startTime
-    const insertionIndex = chronologicalPoints.points.findIndex(p => p.startTime! > pointData.startTime!);
-    const newIndex = insertionIndex === -1 ? chronologicalPoints.points.length : insertionIndex;
+    const insertionIndex = points.findIndex(p => p.startTime! > pointData.startTime!);
+    const newIndex = insertionIndex === -1 ? points.length : insertionIndex;
 
     // Insert point and get new points array
     const newPoints: Point[] = [
-      ...chronologicalPoints.points.slice(0, newIndex),
+      ...points.slice(0, newIndex),
       pointData as Point,
-      ...chronologicalPoints.points.slice(newIndex)
+      ...points.slice(newIndex)
     ];
 
     // If point was inserted in the middle, recalculate all scores
@@ -382,7 +510,7 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     // Keep minimal logging for important operations
     console.log(`[POINT] Updating point ${index}`);
     
-    const newPoints = [...chronologicalPoints.points];
+    const newPoints = [...points];
     newPoints[index] = updatedPoint;
 
     // Recalculate scores from the beginning
@@ -427,7 +555,7 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     // Keep minimal logging for important operations
     console.log(`[POINT] Deleting point ${index}`);
     
-    const newPoints = chronologicalPoints.points.filter((_, i) => i !== index);
+    const newPoints = points.filter((_, i) => i !== index);
 
     // Recalculate scores from the beginning
     const initialMatchConfig = {
@@ -494,7 +622,7 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
     setEditingPoint(null);
     
     // Get the point data
-    const pointToEdit = chronologicalPoints.points[editingPointIndex];
+    const pointToEdit = points[editingPointIndex];
     
     // Keep one concise log for the edit action
     console.log(`[EDIT] Starting edit for point ${editingPointIndex}`);
@@ -533,7 +661,7 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
 
   // Helper to check if time is within existing points
   const isTimeInExistingPoint = (time: number, excludeIndex?: number) => {
-    return chronologicalPoints.points.some((point, index) => {
+    return points.some((point, index) => {
       // Skip if this is the point we're excluding
       if (excludeIndex !== undefined && excludeIndex === index) {
         return false;
@@ -569,7 +697,7 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
         editingPoint={editingPoint}
         onSaveEdit={handleSaveEdit}
         videoRef={videoRef}
-        points={chronologicalPoints.points}
+        points={points}
         editingPointIndex={editingPointIndex}
       />
 
@@ -593,4 +721,4 @@ const Scoreboard = ({ onPlayerNamesChange, videoRef, onPointsChange }: Scoreboar
   );
 };
 
-export default Scoreboard; 
+export default Scoreboard;

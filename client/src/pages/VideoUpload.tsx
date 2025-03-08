@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import axios from 'axios';
-//import { supabase } from '../utils/supabase';
 
 const VideoUpload = () => {
   const [uploading, setUploading] = useState(false);
@@ -21,7 +20,6 @@ const VideoUpload = () => {
           return;
         }
         setFile(selectedFile);
-        // Set default video name from file name without extension
         setVideoName(selectedFile.name.split('.')[0]);
         setError('');
       } else {
@@ -68,11 +66,9 @@ const VideoUpload = () => {
       console.log('Upload completed successfully');
       setProgress(100);
       
-      // Set the video URL for playback
       const videoUrl = `http://localhost:3000/uploads/${response.data.file.filename}`;
       setUploadedVideo(videoUrl);
 
-      // Clear the form after a short delay to show 100% completion
       setTimeout(() => {
         setFile(null);
         setVideoName('');
@@ -91,109 +87,105 @@ const VideoUpload = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="bg-white shadow sm:rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Upload Tennis Match Video
-              </h3>
-              <div className="mt-2 max-w-xl text-sm text-gray-500">
-                <p>Upload your tennis match video for analysis. Maximum file size is 5GB.</p>
-                <p className="mt-1">Supported formats: MP4, MOV, AVI</p>
+    <div className="min-h-screen bg-gray-100 px-4 py-6">
+      <div className="bg-white shadow sm:rounded-lg">
+        <div className="p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">
+            Upload Tennis Match Video
+          </h3>
+          <div className="mt-2 text-sm text-gray-500">
+            <p>Upload your tennis match video for analysis. Maximum file size is 5GB.</p>
+            <p className="mt-1">Supported formats: MP4, MOV, AVI</p>
+          </div>
+          <div className="mt-5">
+            <div className="mt-1">
+              <label htmlFor="video-name" className="block text-sm font-medium text-gray-700">
+                Video Name
+              </label>
+              <input
+                type="text"
+                id="video-name"
+                value={videoName}
+                onChange={(e) => setVideoName(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                placeholder="Enter a name for your video"
+                disabled={uploading}
+              />
+            </div>
+            <div className="mt-4">
+              <label htmlFor="file-upload" className="block text-sm font-medium text-gray-700">
+                Video File
+              </label>
+              <input
+                id="file-upload"
+                name="file-upload"
+                type="file"
+                accept="video/mp4,video/quicktime,video/x-msvideo"
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                onChange={handleFileChange}
+                disabled={uploading}
+              />
+            </div>
+            {error && (
+              <div className="mt-2 text-sm text-red-600">
+                {error}
               </div>
-              <div className="mt-5">
-                <div className="mt-1">
-                  <label htmlFor="video-name" className="block text-sm font-medium text-gray-700">
-                    Video Name
-                  </label>
-                  <input
-                    type="text"
-                    id="video-name"
-                    value={videoName}
-                    onChange={(e) => setVideoName(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    placeholder="Enter a name for your video"
-                    disabled={uploading}
-                  />
-                </div>
-                <div className="mt-4">
-                  <label htmlFor="file-upload" className="block text-sm font-medium text-gray-700">
-                    Video File
-                  </label>
-                  <input
-                    id="file-upload"
-                    name="file-upload"
-                    type="file"
-                    accept="video/mp4,video/quicktime,video/x-msvideo"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    onChange={handleFileChange}
-                    disabled={uploading}
-                  />
-                </div>
-                {error && (
-                  <div className="mt-2 text-sm text-red-600">
-                    {error}
-                  </div>
-                )}
-                {file && (
-                  <div className="mt-2 text-sm text-gray-500">
-                    Selected file: {file.name}
-                  </div>
-                )}
-                {uploading && progress > 0 && (
-                  <div className="mt-2">
-                    <div className="relative pt-1">
-                      <div className="flex mb-2 items-center justify-between">
-                        <div>
-                          <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-indigo-600 bg-indigo-200">
-                            Progress
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs font-semibold inline-block text-indigo-600">
-                            {progress}%
-                          </span>
-                        </div>
-                      </div>
-                      <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-indigo-200">
-                        <div
-                          style={{ width: `${progress}%` }}
-                          className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500 transition-all duration-500"
-                        />
-                      </div>
+            )}
+            {file && (
+              <div className="mt-2 text-sm text-gray-500">
+                Selected file: {file.name}
+              </div>
+            )}
+            {uploading && progress > 0 && (
+              <div className="mt-2">
+                <div className="relative pt-1">
+                  <div className="flex mb-2 items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-indigo-600 bg-indigo-200">
+                        Progress
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-semibold inline-block text-indigo-600">
+                        {progress}%
+                      </span>
                     </div>
                   </div>
-                )}
-                <button
-                  type="button"
-                  onClick={handleUpload}
-                  disabled={!file || uploading}
-                  className={`mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
-                    !file || uploading
-                      ? 'bg-indigo-400 cursor-not-allowed'
-                      : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                  }`}
-                >
-                  {uploading ? 'Uploading...' : 'Upload Video'}
-                </button>
-              </div>
-              
-              {uploadedVideo && (
-                <div className="mt-6">
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">Uploaded Video</h4>
-                  <video 
-                    controls 
-                    className="w-full rounded-lg shadow-lg"
-                    src={uploadedVideo}
-                  >
-                    Your browser does not support the video tag.
-                  </video>
+                  <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-indigo-200">
+                    <div
+                      style={{ width: `${progress}%` }}
+                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500 transition-all duration-500"
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleUpload}
+              disabled={!file || uploading}
+              className={`mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
+                !file || uploading
+                  ? 'bg-indigo-400 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+              }`}
+            >
+              {uploading ? 'Uploading...' : 'Upload Video'}
+            </button>
           </div>
+          
+          {uploadedVideo && (
+            <div className="mt-6">
+              <h4 className="text-lg font-medium text-gray-900 mb-2">Uploaded Video</h4>
+              <video 
+                controls 
+                className="w-full rounded-lg shadow-lg"
+                src={uploadedVideo}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          )}
         </div>
       </div>
     </div>

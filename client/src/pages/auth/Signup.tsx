@@ -1,15 +1,28 @@
-import { useState, FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, FormEvent, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { validatePassword } from '../../utils/passwordValidation';
+import axios from 'axios';
 
 const Signup = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // If the user navigates away (e.g., to /login), don't proceed with the signup/login flow
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    // If the location changes, stop the signup/login flow
+    if (location.pathname !== '/signup') {
+      setIsActive(false);
+    }
+  }, [location.pathname]);
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newPassword = e.target.value;
@@ -20,6 +33,11 @@ const Signup = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!isActive) {
+      console.log('Signup flow aborted due to navigation');
+      return;
+    }
 
     if (passwordErrors.length > 0) {
       setError('Please fix password requirements');
@@ -34,42 +52,37 @@ const Signup = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/signup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
+      await axios.post('http://localhost:3000/api/auth/signup', {
+        email,
+        password,
+        username,
       });
 
-      const data = await response.json();
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Signup failed');
-      }
-
-      // Automatically log in after signup
-      const loginResponse = await fetch('http://localhost:3000/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
+      const loginResponse = await axios.post('http://localhost:3000/api/auth/login', {
+        email,
+        password,
       });
 
-      const loginData = await loginResponse.json();
-
-      if (!loginResponse.ok) {
-        throw new Error(loginData.error || 'Login failed');
-      }
-
-      localStorage.setItem('token', loginData.token);
-      navigate('/dashboard');
+      console.log('Login response in Signup:', loginResponse.data);
+      const token = loginResponse.data.token;
+      console.log('Storing token in localStorage:', token);
+      localStorage.setItem('token', token);
+      navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
+      let errorMessage = 'An unexpected error occurred';
+      
+      if (axios.isAxiosError(err)) {
+        errorMessage = err.response?.data?.error || err.message || errorMessage;
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      if (errorMessage.includes('A user with this email address has already been registered')) {
+        setError('This email is already registered. Please use a different email or log in.');
       } else {
-        setError('An unexpected error occurred');
+        setError(errorMessage);
       }
     } finally {
       setIsLoading(false);
@@ -77,8 +90,8 @@ const Signup = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center py-12 px-4">
+      <div className="w-full max-w-md space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Create your account
@@ -104,6 +117,21 @@ const Signup = () => {
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="username" className="sr-only">
+                Username
+              </label>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
               />
             </div>
             <div>
@@ -174,4 +202,4 @@ const Signup = () => {
   );
 };
 
-export default Signup; 
+export default Signup;

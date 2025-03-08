@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Scoreboard from '../components/Scoreboard';
 import VideoTimeline from '../components/VideoTimeline';
+import ClipManager from '../components/ClipManager';
 import { Point } from '../types/scoreboard';
 
 interface Video {
@@ -13,6 +14,14 @@ interface Video {
   createdAt: string;
 }
 
+interface PersistedMatchConfig {
+  type: 'match' | 'tiebreak' | null;
+  tiebreakPoints: 7 | 10;
+  noAd: boolean;
+  firstServer: 1 | 2 | null;
+  isConfigured: boolean;
+}
+
 const VideoEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -21,6 +30,62 @@ const VideoEdit = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [points, setPoints] = useState<Point[]>([]);
+  const [activeTab, setActiveTab] = useState<'score' | 'clips'>('score');
+  
+  const [matchConfig, setMatchConfig] = useState<PersistedMatchConfig>({
+    type: 'match',
+    tiebreakPoints: 7,
+    noAd: false,
+    firstServer: null,
+    isConfigured: false
+  });
+  
+  const [playerNames, setPlayerNames] = useState<{player1: string, player2: string}>({
+    player1: 'Player 1',
+    player2: 'Player 2'
+  });
+
+  // Memoize matchConfig, playerNames, and points to prevent unnecessary re-renders
+  const memoizedMatchConfig = useMemo(() => matchConfig, [matchConfig]);
+  const memoizedPlayerNames = useMemo(() => playerNames, [playerNames]);
+  const memoizedPoints = useMemo(() => points, [points]);
+
+  // Memoize callbacks to prevent unnecessary re-renders
+  const handleMatchConfigChange = useCallback((config: Partial<PersistedMatchConfig>) => {
+    setMatchConfig(prev => {
+      const newConfig = { ...prev, ...config };
+      // Avoid update if the config hasn't changed
+      if (
+        prev.type === newConfig.type &&
+        prev.tiebreakPoints === newConfig.tiebreakPoints &&
+        prev.noAd === newConfig.noAd &&
+        prev.firstServer === newConfig.firstServer &&
+        prev.isConfigured === newConfig.isConfigured
+      ) {
+        return prev;
+      }
+      return newConfig;
+    });
+  }, []);
+
+  const handlePointsChange = useCallback((newPoints: Point[]) => {
+    setPoints(prev => {
+      // Avoid update if points haven't changed (deep comparison)
+      if (JSON.stringify(prev) === JSON.stringify(newPoints)) {
+        return prev;
+      }
+      return newPoints;
+    });
+  }, []);
+
+  const handlePlayerNamesChange = useCallback((player1: string, player2: string) => {
+    setPlayerNames(prev => {
+      if (prev.player1 === player1 && prev.player2 === player2) {
+        return prev;
+      }
+      return { player1, player2 };
+    });
+  }, []);
 
   useEffect(() => {
     const fetchVideo = async () => {
@@ -50,11 +115,6 @@ const VideoEdit = () => {
     }
   };
 
-  const handlePlayerNamesChange = (player1: string, player2: string) => {
-    console.log('Player names updated:', { player1, player2 });
-    // Will handle saving player names later
-  };
-
   const handleSeek = (time: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
@@ -78,9 +138,10 @@ const VideoEdit = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
+    <div className="min-h-screen bg-gray-100 px-4">
+      {/* Removed max-w-7xl and adjusted padding */}
+      <div className="py-6">
+        <div className="px-4 py-6">
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center space-x-4">
               <input
@@ -119,19 +180,55 @@ const VideoEdit = () => {
                   </div>
                   <VideoTimeline
                     videoRef={videoRef}
-                    points={points}
+                    points={memoizedPoints}
                     onSeek={handleSeek}
                   />
                 </div>
 
-                {/* Scoreboard Column */}
+                {/* Right Column with Tabs */}
                 <div className="lg:col-span-1">
-                  <h2 className="text-lg font-medium text-gray-900 mb-4">Match Score</h2>
-                  <Scoreboard 
-                    onPlayerNamesChange={handlePlayerNamesChange}
-                    videoRef={videoRef}
-                    onPointsChange={setPoints}
-                  />
+                  <div className="mb-4 border-b">
+                    <nav className="flex space-x-2 mb-4">
+                      <button
+                        onClick={() => setActiveTab('score')}
+                        className={`px-4 py-2 border text-sm font-medium rounded-md ${
+                          activeTab === 'score'
+                            ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+                            : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        Scoring
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('clips')}
+                        className={`px-4 py-2 border text-sm font-medium rounded-md ${
+                          activeTab === 'clips'
+                            ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+                            : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        Clips & Export
+                      </button>
+                    </nav>
+                  </div>
+
+                  {activeTab === 'score' ? (
+                    <div>
+                      <Scoreboard 
+                        onPlayerNamesChange={handlePlayerNamesChange}
+                        videoRef={videoRef}
+                        onPointsChange={handlePointsChange}
+                        playerNames={memoizedPlayerNames}
+                        matchConfig={memoizedMatchConfig}
+                        onMatchConfigChange={handleMatchConfigChange}
+                        initialPoints={memoizedPoints}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <ClipManager videoId={video.id} points={memoizedPoints} />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -142,4 +239,4 @@ const VideoEdit = () => {
   );
 };
 
-export default VideoEdit; 
+export default VideoEdit;

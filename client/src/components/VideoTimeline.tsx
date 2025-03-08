@@ -16,8 +16,13 @@ const VideoTimeline = ({ videoRef, points, onSeek }: VideoTimelineProps) => {
     const video = videoRef.current;
     if (!video) return;
 
+    let timeoutId: NodeJS.Timeout;
     const handleTimeUpdate = () => {
-      setProgress((video.currentTime / video.duration) * 100);
+      // Debounce the setProgress update
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        setProgress((video.currentTime / video.duration) * 100);
+      }, 100); // Update progress every 100ms
     };
 
     const handleLoadedMetadata = () => {
@@ -30,6 +35,7 @@ const VideoTimeline = ({ videoRef, points, onSeek }: VideoTimelineProps) => {
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      clearTimeout(timeoutId);
     };
   }, [videoRef]);
 
@@ -105,4 +111,4 @@ const VideoTimeline = ({ videoRef, points, onSeek }: VideoTimelineProps) => {
   );
 };
 
-export default VideoTimeline; 
+export default VideoTimeline;

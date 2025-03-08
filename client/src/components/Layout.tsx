@@ -1,24 +1,69 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../utils/supabase';
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 
 const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem('token');
+    console.log('Token from localStorage:', token);
+
+    if (!token) {
+      console.log('No token found, setting isAuthenticated to false');
+      setIsAuthenticated(false);
+      return;
+    }
+
+    try {
+      console.log('Validating token with backend...');
+      const response = await axios.get('http://localhost:3000/api/auth/validate-token', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      console.log('Token validation response:', response.data);
+      setIsAuthenticated(response.status === 200);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        console.error('Token validation error:', err.response?.data || err.message);
+      } else {
+        console.error('Token validation error:', err);
+      }
+      setIsAuthenticated(false);
+    }
+  };
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsAuthenticated(!!session);
+    checkAuth(); // Run on mount
+
+    // Listen for storage events to detect token changes
+    const handleStorageChange = () => {
+      checkAuth();
     };
 
-    checkAuth();
-  }, []);
+    window.addEventListener('storage', handleStorageChange);
+
+    // Also re-run checkAuth when location changes (e.g., after login/signup)
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [location]); // Re-run when location changes
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/login');
+    try {
+      await axios.post('http://localhost:3000/api/auth/logout');
+      localStorage.removeItem('token');
+      setIsAuthenticated(false); // Update state immediately
+      navigate('/login');
+    } catch (err) {
+      console.error('Logout error:', err);
+      localStorage.removeItem('token');
+      setIsAuthenticated(false);
+      navigate('/login');
+    }
   };
 
   // Don't show navigation for auth pages
@@ -28,10 +73,12 @@ const Layout = () => {
     return <Outlet />;
   }
 
+  console.log('Rendering Layout, isAuthenticated:', isAuthenticated);
+
   return (
     <div className="min-h-screen bg-gray-100">
       <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-4 py-4">
           <div className="flex justify-between h-16">
             <div className="flex">
               <div className="flex-shrink-0 flex items-center">
@@ -105,4 +152,4 @@ const Layout = () => {
   );
 };
 
-export default Layout; 
+export default Layout;

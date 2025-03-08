@@ -2,11 +2,12 @@
 
 ## Completed Features
 1. **Authentication System**
-   - User signup and login
+   - User signup and login with secure error handling
    - Password reset functionality
    - Password strength validation
    - Protected routes
    - Session management
+   - Type-safe error handling
 
 2. **Video Upload System**
    - File upload with progress tracking
@@ -54,29 +55,41 @@
    - Point winner modification
    - Validation for point time boundaries
 
+6. **Video Processing**
+   - FFmpeg detection and status reporting
+   - Backend video trimming system
+   - Individual clip creation from points
+   - Combined clip export with multiple points
+   - Download links for processed videos
+   - View capabilities for exported videos
+   - Clip management (creation, deletion)
+   - Time formatting in MM:SS format for better readability
+   - User-friendly labels and timestamps for saved clips
+
 ## In Progress
 1. **Video Processing**
-   - Backend trimming system
-   - Clip management
-   - Export functionality
+   - Optional scoreboard inclusion in exports
+   - Rename video clips
+   - Clip video preview
+
+2. **UI/UX Enhancements**
+   - Improving text contrast and visibility
+   - Optimizing component layouts for better user experience
 
 ## Next Steps
 1. **Score Tracking Enhancement**
    - Add match statistics view
    - Develop match metadata storage
 
-2. **Video Editor Enhancement**
-   - Add frame-by-frame navigation
-   - Add keyboard shortcuts for common actions
+2. **Performance Optimization**
+   - Implement React component memoization for better performance
+   - Optimize rendering of large point lists
 
 ## Known Issues
 1. **Storage**
    - Local storage limitations
    - Need to implement cloud storage solution
 
-2. **Video Processing**
-   - Need to implement server-side video processing
-   - Export functionality not yet available
 
 ## Future Features
 1. **Automated Editing**

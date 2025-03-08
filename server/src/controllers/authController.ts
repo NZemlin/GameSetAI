@@ -1,40 +1,59 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { supabase } from '../index';
-import { createClient } from '@supabase/supabase-js';
+import { supabase, supabaseAdmin } from '../index';
+import { createClient, User } from '@supabase/supabase-js';
 
-export const signup = async (req: Request, res: Response) => {
+// Signup user
+export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body;
+    const { email, password, username } = req.body;
+
+    console.log('Signup attempt with:', { email, username }); // Log the request payload
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      console.log('Missing email or password');
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: username ? { username } : undefined,
+      },
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase signup error:', error); // Log the full error object
+      res.status(400).json({ error: error.message });
+      return;
+    }
 
-    return res.status(201).json({
+    console.log('Signup successful:', data);
+    res.status(201).json({
       message: 'User created successfully',
       user: data.user,
     });
   } catch (error: any) {
-    return res.status(500).json({
+    console.error('Unexpected error during signup:', error); // Log unexpected errors
+    res.status(500).json({
       error: error.message || 'Error creating user',
     });
   }
 };
 
-export const login = async (req: Request, res: Response) => {
+// Login user
+export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
+    console.log('Login attempt with email:', email);
+    console.log('JWT_SECRET used for signing:', process.env.JWT_SECRET || 'your-secret-key');
+
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -42,62 +61,76 @@ export const login = async (req: Request, res: Response) => {
       password,
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase login error:', error);
+      res.status(400).json({ error: error.message });
+      return;
+    }
 
-    // Create JWT token
     const token = jwt.sign(
       { userId: data.user.id },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
-    return res.status(200).json({
+    console.log('Generated token:', token);
+
+    res.status(200).json({
       message: 'Login successful',
       user: data.user,
       token,
     });
   } catch (error: any) {
-    return res.status(500).json({
+    console.error('Login error details:', error);
+    res.status(500).json({
       error: error.message || 'Error logging in',
     });
   }
 };
 
-export const requestPasswordReset = async (req: Request, res: Response) => {
+// Request password reset
+export const requestPasswordReset = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
+      res.status(400).json({ error: 'Email is required' });
+      return;
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${process.env.CLIENT_URL}/reset-password`,
     });
 
-    if (error) throw error;
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
 
-    return res.status(200).json({
+    res.status(200).json({
       message: 'Password reset email sent',
     });
   } catch (error: any) {
-    return res.status(500).json({
+    res.status(500).json({
       error: error.message || 'Error requesting password reset',
     });
   }
 };
 
-export const resetPassword = async (req: Request, res: Response) => {
+// Reset password
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { password } = req.body;
     const token = req.headers.authorization?.split(' ')[1];
 
     if (!password) {
-      return res.status(400).json({ error: 'New password is required' });
+      res.status(400).json({ error: 'New password is required' });
+      return;
     }
 
     if (!token) {
-      return res.status(401).json({ error: 'Reset token is required' });
+      res.status(401).json({ error: 'Reset token is required' });
+      return;
     }
 
     // Create a new Supabase client with the user's token
@@ -117,30 +150,109 @@ export const resetPassword = async (req: Request, res: Response) => {
       password: password,
     });
 
-    if (error) throw error;
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
 
-    return res.status(200).json({
+    res.status(200).json({
       message: 'Password updated successfully',
     });
   } catch (error: any) {
-    return res.status(500).json({
+    res.status(500).json({
       error: error.message || 'Error resetting password',
     });
   }
 };
 
-export const logout = async (req: Request, res: Response) => {
+// Logout user
+export const logout = async (req: Request, res: Response): Promise<void> => {
   try {
     const { error } = await supabase.auth.signOut();
-    
-    if (error) throw error;
 
-    return res.status(200).json({
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
+    res.status(200).json({
       message: 'Logged out successfully',
     });
   } catch (error: any) {
-    return res.status(500).json({
+    res.status(500).json({
       error: error.message || 'Error logging out',
     });
   }
-}; 
+};
+
+// Validate JWT token
+export const validateToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      res.status(401).json({ error: 'Token is required' });
+      return;
+    }
+
+    console.log('Validating token:', token);
+    console.log('JWT_SECRET used for verification:', process.env.JWT_SECRET || 'your-secret-key');
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string };
+    console.log('Token decoded successfully:', decoded);
+
+    res.status(200).json({ message: 'Token is valid', userId: decoded.userId });
+  } catch (error: any) {
+    console.error('Token validation error:', error.message);
+    res.status(401).json({
+      error: error.message || 'Invalid or expired token',
+    });
+  }
+};
+
+// Get user profile
+export const getProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      res.status(401).json({ error: 'Token is required' });
+      return;
+    }
+
+    // Verify the JWT token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string };
+    console.log('Decoded token:', decoded);
+
+    // Fetch user data from Supabase using the admin client
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(decoded.userId);
+
+    if (error) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
+    // Check if user exists
+    if (!data.user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    // Type the user object explicitly
+    const user: User = data.user;
+
+    res.status(200).json({
+      message: 'Profile fetched successfully',
+      user: {
+        id: user.id,
+        email: user.email || '',
+        username: user.user_metadata?.username || '',
+      },
+    });
+  } catch (error: any) {
+    console.error('Get profile error:', error.message);
+    res.status(500).json({
+      error: error.message || 'Error fetching profile',
+    });
+  }
+};
