@@ -30,10 +30,11 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  padding: 0;
+  min-width: 100%;
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 h1 {
@@ -71,4 +72,135 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+}
+
+/* Form input styling fixes - stronger override */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="file"],
+input {
+  background-color: white !important;
+  color: #1F2937 !important;
+  border-color: #D1D5DB !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+}
+
+/* Target filled inputs by their value attribute */
+input[value]:not([value=""]),
+input:not([value=""]),
+input[data-form-type="other"] {
+  background-color: white !important;
+  color: #1F2937 !important;
+  border-color: #D1D5DB !important;
+}
+
+/* More specific selector for inputs with value */
+.mt-1.appearance-none.block.w-full {
+  background-color: white !important;
+  color: #1F2937 !important;
+  border-color: #D1D5DB !important;
+  -webkit-text-fill-color: #1F2937 !important;
+}
+
+/* Target autofilled inputs */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  -webkit-text-fill-color: #1F2937 !important;
+}
+
+/* When input is focused */
+input:focus {
+  background-color: white !important;
+  color: #1F2937 !important;
+  border-color: #6366F1 !important;
+  outline-color: #6366F1 !important;
+}
+
+/* Custom class for form inputs with stronger styling */
+.custom-input {
+  background-color: white !important;
+  color: #1F2937 !important;
+  border-color: #D1D5DB !important;
+  -webkit-text-fill-color: #1F2937 !important;
+}
+
+.custom-input::selection {
+  background-color: #E0E7FF !important;
+  color: #1F2937 !important;
+}
+
+/* Direct approach for all inputs that are editable */
+input[type="text"]:read-write,
+input[type="email"]:read-write,
+input[type="password"]:read-write,
+input:read-write {
+  background-color: white !important;
+  color: #1F2937 !important;
+  caret-color: #1F2937 !important;
+  -webkit-text-fill-color: #1F2937 !important;
+}
+
+/* Fix autofill browser styling permanently */
+input:-webkit-autofill {
+  transition: background-color 5000s ease-in-out 0s !important;
+  -webkit-text-fill-color: #1F2937 !important;
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #d1d5db; /* gray-300 */
+  border-radius: 4px;
+  background-color: white !important;
+  position: relative;
+  cursor: pointer;
+}
+
+input[type="checkbox"]:checked {
+  background-color: #2563eb !important; /* blue-600 */
+  border-color: #2563eb !important;
+}
+
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 6px;
+  height: 12px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Custom scrollbar styling */
+.custom-scrollbar {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #E5E7EB transparent;
+}
+
+/* Chrome, Safari, and other WebKit browsers */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #E5E7EB;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #D1D5DB;
 }

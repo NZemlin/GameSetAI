@@ -8,8 +8,14 @@ import {
   exportMatchVideo,
   checkFfmpegStatus,
   listExports,
-  deleteExport // Add the new handler
+  deleteExport,
+  renameClip,
+  renameExport,
+  downloadClip,
+  downloadExport
 } from '../controllers/videoProcessingController';
+import path from 'path';
+import fs from 'fs/promises'; // For reading metadata files
 
 console.log('Loading videoProcessingRoutes.ts');
 
@@ -35,6 +41,9 @@ router.get('/clips/:id', getClip);
 // DELETE /api/processing/clips/:id - Delete a specific clip by ID
 router.delete('/clips/:id', deleteClip);
 
+// PUT /api/processing/clips/:id/rename - Rename a specific clip by ID
+router.put('/clips/:id/rename', renameClip);
+
 // POST /api/processing/clip - Create a single clip
 router.post('/clip', createClip);
 
@@ -47,8 +56,17 @@ router.post('/export', exportMatchVideo);
 // GET /api/processing/exports - List all exports
 router.get('/exports', listExports);
 
-// NEW: DELETE /api/processing/exports/:id - Delete a specific export by ID
+// DELETE /api/processing/exports/:id - Delete a specific export by ID
 router.delete('/exports/:id', deleteExport);
+
+// PUT /api/processing/exports/:id/rename - Rename a specific export by ID
+router.put('/exports/:id/rename', renameExport);
+
+// New route: Download a specific clip by ID
+router.get('/download/clip/:id', downloadClip);
+
+// New route: Download a specific export by ID
+router.get('/download/export/:id', downloadExport);
 
 // Handle 404 errors for undefined routes within /api/processing
 router.use((req: Request, res: Response) => {

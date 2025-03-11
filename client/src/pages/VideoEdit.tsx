@@ -5,6 +5,7 @@ import Scoreboard from '../components/Scoreboard';
 import VideoTimeline from '../components/VideoTimeline';
 import ClipManager from '../components/ClipManager';
 import { Point } from '../types/scoreboard';
+import SavedClipsAndExports from '../components/SavedClipsAndExports';
 
 interface Video {
   id: string;
@@ -31,6 +32,7 @@ const VideoEdit = () => {
   const [error, setError] = useState('');
   const [points, setPoints] = useState<Point[]>([]);
   const [activeTab, setActiveTab] = useState<'score' | 'clips'>('score');
+  const [refreshClips, setRefreshClips] = useState(0);
   
   const [matchConfig, setMatchConfig] = useState<PersistedMatchConfig>({
     type: 'match',
@@ -87,6 +89,11 @@ const VideoEdit = () => {
     });
   }, []);
 
+  // Handler to trigger refresh of saved clips and exports
+  const handleClipCreated = () => {
+    setRefreshClips(prev => prev + 1);
+  };
+
   useEffect(() => {
     const fetchVideo = async () => {
       try {
@@ -138,80 +145,80 @@ const VideoEdit = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 px-4">
-      {/* Removed max-w-7xl and adjusted padding */}
-      <div className="py-6">
-        <div className="px-4 py-6">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center space-x-4">
-              <input
-                type="text"
-                value={video.name === 'Untitled Video' ? '' : video.name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Untitled Video"
-                className="text-2xl font-semibold text-gray-900 bg-transparent focus:outline-none placeholder-gray-400 min-w-[200px]"
-              />
-              <span className="text-sm text-gray-500">
-                Uploaded {new Date(video.createdAt).toLocaleDateString()}
-              </span>
-            </div>
-            <button
-              onClick={() => navigate('/videos')}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Back to Videos
-            </button>
+    <div className="min-h-screen bg-gray-100 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center space-x-4">
+            <input
+              type="text"
+              value={video.name === 'Untitled Video' ? '' : video.name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Untitled Video"
+              className="text-2xl font-semibold text-gray-900 bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:rounded-md rounded-md placeholder-gray-400 min-w-[200px] px-2 py-1 border border-transparent hover:border-gray-300 transition-colors duration-200"
+            />
+            <span className="text-sm text-gray-500">
+              Uploaded {new Date(video.createdAt).toLocaleDateString()}
+            </span>
           </div>
+          <button
+            onClick={() => navigate('/videos')}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Back to Videos
+          </button>
+        </div>
 
-          <div className="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Video Player Column */}
-                <div className="lg:col-span-2">
-                  <div className="aspect-w-16 aspect-h-9">
-                    <video
-                      ref={videoRef}
-                      controls
-                      className="w-full h-full rounded-lg"
-                      src={`http://localhost:3000/${video.path}`}
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
+          <div className="p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Video Player Column */}
+              <div className="lg:col-span-2">
+                <div className="aspect-w-16 aspect-h-9">
+                  <video
+                    ref={videoRef}
+                    controls
+                    className="w-full h-full rounded-lg"
+                    src={`http://localhost:3000/${video.path}`}
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                <VideoTimeline
+                  videoRef={videoRef}
+                  points={memoizedPoints}
+                  onSeek={handleSeek}
+                />
+              </div>
+
+              {/* Right Column with Tabs */}
+              <div className="lg:col-span-1">
+                <div className="mb-4 border-b">
+                  <nav className="flex space-x-2 mb-4">
+                    <button
+                      onClick={() => setActiveTab('score')}
+                      className={`px-4 py-2 border text-sm font-medium rounded-md ${
+                        activeTab === 'score'
+                          ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+                          : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
+                      }`}
                     >
-                      Your browser does not support the video tag.
-                    </video>
-                  </div>
-                  <VideoTimeline
-                    videoRef={videoRef}
-                    points={memoizedPoints}
-                    onSeek={handleSeek}
-                  />
+                      Scoring
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('clips')}
+                      className={`px-4 py-2 border text-sm font-medium rounded-md ${
+                        activeTab === 'clips'
+                          ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+                          : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
+                      }`}
+                    >
+                      Clip Manager
+                    </button>
+                  </nav>
                 </div>
 
-                {/* Right Column with Tabs */}
-                <div className="lg:col-span-1">
-                  <div className="mb-4 border-b">
-                    <nav className="flex space-x-2 mb-4">
-                      <button
-                        onClick={() => setActiveTab('score')}
-                        className={`px-4 py-2 border text-sm font-medium rounded-md ${
-                          activeTab === 'score'
-                            ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                            : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
-                        }`}
-                      >
-                        Scoring
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('clips')}
-                        className={`px-4 py-2 border text-sm font-medium rounded-md ${
-                          activeTab === 'clips'
-                            ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                            : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
-                        }`}
-                      >
-                        Clips & Export
-                      </button>
-                    </nav>
-                  </div>
-
+                {/* Ensure consistent height between tabs */}
+                <div style={{ minHeight: 'calc(100vh - 600px)' }}>
                   {activeTab === 'score' ? (
                     <div>
                       <Scoreboard 
@@ -226,12 +233,27 @@ const VideoEdit = () => {
                     </div>
                   ) : (
                     <div>
-                      <ClipManager videoId={video.id} points={memoizedPoints} />
+                      <ClipManager 
+                        videoId={video.id} 
+                        points={memoizedPoints}
+                        clipsSavedBelow={true}
+                        onClipCreated={handleClipCreated}
+                      />
                     </div>
                   )}
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* New row for Saved Clips and Exports - always visible */}
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-6">
+          <div className="p-6">
+            <SavedClipsAndExports 
+              videoId={video.id} 
+              refreshTrigger={refreshClips}
+            />
           </div>
         </div>
       </div>

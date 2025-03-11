@@ -30,6 +30,8 @@ const formatDuration = (seconds: number): string => {
 interface ClipManagerProps {
   videoId: string;
   points: Point[];
+  clipsSavedBelow?: boolean;
+  onClipCreated?: () => void;
 }
 
 interface ClipMetadata {
@@ -49,9 +51,10 @@ interface ExportMetadata {
   includeScoreboard: boolean;
   path: string;
   createdAt: string;
+  label?: string;
 }
 
-const ClipManager = ({ videoId, points }: ClipManagerProps) => {
+const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }: ClipManagerProps) => {
   const [clips, setClips] = useState<ClipMetadata[]>([]);
   const [exports, setExports] = useState<ExportMetadata[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +62,6 @@ const ClipManager = ({ videoId, points }: ClipManagerProps) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
-  const [combinedExport, setCombinedExport] = useState(true);
   const [includeScoreboard, setIncludeScoreboard] = useState(true);
   const [ffmpegInstalled, setFffmpegInstalled] = useState<boolean | null>(null);
 
@@ -146,6 +148,11 @@ const ClipManager = ({ videoId, points }: ClipManagerProps) => {
       if (!response.data.ffmpegInstalled) {
         setSuccess('Clip metadata created, but FFmpeg is not installed. Only original video will be referenced.');
       }
+      
+      // Notify parent component that a clip has been created
+      if (onClipCreated) {
+        onClipCreated();
+      }
     } catch (err) {
       console.error('Error creating clip:', err);
       setError('Failed to create clip');
@@ -170,52 +177,29 @@ const ClipManager = ({ videoId, points }: ClipManagerProps) => {
         point => point.startTime !== null && point.endTime !== null
       );
 
-      if (combinedExport) {
-        // Export as a single combined video
-        const response = await axios.post('http://localhost:3000/api/processing/export', {
-          videoId,
-          points: pointsToExport,
-          includeScoreboard
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+      // Always export as a single combined video
+      const response = await axios.post('http://localhost:3000/api/processing/export', {
+        videoId,
+        points: pointsToExport,
+        includeScoreboard
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-        setSuccess(response.data.message || 'Match video exported successfully');
-        setExports(prevExports => [...prevExports, response.data.export]);
-        
-        if (response.data.ffmpegInstalled !== undefined) {
-          setFffmpegInstalled(response.data.ffmpegInstalled);
-        }
-        
-        if (!response.data.ffmpegInstalled) {
-          setSuccess('Export metadata created, but FFmpeg is not installed. Only original video will be referenced.');
-        }
-      } else {
-        // Export each point as a separate clip
-        const clipRequests = pointsToExport.map((point, index) => ({
-          startTime: point.startTime,
-          endTime: point.endTime,
-          label: `Point ${selectedPoints[index] + 1} (Winner: Player ${point.winner})`
-        }));
-
-        const response = await axios.post('http://localhost:3000/api/processing/clips', {
-          videoId,
-          clips: clipRequests,
-          combineClips: false
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        setClips(prevClips => [...prevClips, ...response.data.clips]);
-        setSuccess(response.data.message || 'Clips created successfully');
-        
-        if (response.data.ffmpegInstalled !== undefined) {
-          setFffmpegInstalled(response.data.ffmpegInstalled);
-        }
-        
-        if (!response.data.ffmpegInstalled) {
-          setSuccess('Clip metadata created, but FFmpeg is not installed. Only original video will be referenced.');
-        }
+      setSuccess(response.data.message || 'Match video exported successfully');
+      setExports(prevExports => [...prevExports, response.data.export]);
+      
+      if (response.data.ffmpegInstalled !== undefined) {
+        setFffmpegInstalled(response.data.ffmpegInstalled);
+      }
+      
+      if (!response.data.ffmpegInstalled) {
+        setSuccess('Export metadata created, but FFmpeg is not installed. Only original video will be referenced.');
+      }
+      
+      // Notify parent component that clips/exports have been created
+      if (onClipCreated) {
+        onClipCreated();
       }
     } catch (err) {
       console.error('Error exporting points:', err);
@@ -272,234 +256,215 @@ const ClipManager = ({ videoId, points }: ClipManagerProps) => {
   };
 
   return (
-    <div className="mt-6">
-      <div className="bg-white rounded-lg p-4" style={{ boxShadow: '0 0 15px rgba(0, 0, 0, 0.1)' }}>
-        <h2 className="text-xl font-semibold mb-4 text-gray-900">Clip Manager</h2>
+    <div className={error || success ? 'mb-4' : ''}>
+      {error && <div className="p-3 bg-red-100 text-red-700 rounded-md mb-4">{error}</div>}
+      {success && <div className="p-3 bg-green-100 text-green-700 rounded-md mb-4">{success}</div>}
+      
+      {ffmpegInstalled === false && (
+        <div className="p-3 bg-yellow-50 text-yellow-800 rounded-md mb-4 text-sm">
+          <p>FFmpeg not detected. Clips will reference original video files.</p>
+        </div>
+      )}
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-            {success}
-          </div>
-        )}
-        
-        {ffmpegInstalled === false && (
-          <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4">
-            <p><strong>FFmpeg not detected on the server.</strong></p>
-            <p>Video processing features are limited. Clips will reference original video files.</p>
-            <p>To enable full video processing, please install FFmpeg on the server.</p>
-          </div>
-        )}
-
-        <div className="mb-6">
-          <h3 className="text-lg font-medium mb-2 text-gray-900">Export Points</h3>
-          <div className="flex items-center mb-4">
-            <button
-              onClick={selectAllPoints}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm mr-2"
-            >
-              Select All
-            </button>
-            <button
-              onClick={deselectAllPoints}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm"
-            >
-              Deselect All
-            </button>
-            <span className="ml-4 text-sm text-gray-600">
-              {selectedPoints.length} points selected
-            </span>
-          </div>
-
-          <div className="mb-4">
-            <div className="flex items-center mb-2">
-              <input
-                type="checkbox"
-                id="combinedExport"
-                checked={combinedExport}
-                onChange={() => setCombinedExport(!combinedExport)}
-                className="mr-2"
-              />
-              <label htmlFor="combinedExport" className="text-sm text-gray-800">
-                Combine points into a single video
-              </label>
-            </div>
-            
-            {combinedExport && (
-              <div className="flex items-center ml-6 mb-2">
-                <input
-                  type="checkbox"
-                  id="includeScoreboard"
-                  checked={includeScoreboard}
-                  onChange={() => setIncludeScoreboard(!includeScoreboard)}
-                  className="mr-2"
-                />
-                <label htmlFor="includeScoreboard" className="text-sm text-gray-800">
-                  Include scoreboard {ffmpegInstalled === false ? '(requires FFmpeg)' : '(coming soon)'}
-                </label>
-              </div>
-            )}
-          </div>
-
-          <div className="mb-4">
+      <div className="space-y-6">
+        <div>
+          {/* Main controls row with Export and Select All */}
+          <div className="flex items-center mb-3">
             <button
               onClick={exportSelectedPoints}
               disabled={exportLoading || selectedPoints.length === 0}
               className={`${
                 exportLoading || selectedPoints.length === 0
-                  ? 'bg-blue-300 cursor-not-allowed text-gray-800'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              } px-4 py-2 rounded`}
+                  ? 'bg-indigo-300 cursor-not-allowed text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              } px-5 py-1.5 rounded font-medium text-sm mr-3`}
             >
-              {exportLoading ? 'Exporting...' : 'Export Selected Points'}
+              {exportLoading ? 'Exporting...' : 'Export'}
             </button>
+            
+            <button
+              onClick={selectedPoints.length === points.length ? deselectAllPoints : selectAllPoints}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-1.5 rounded font-medium text-sm mr-3"
+            >
+              {selectedPoints.length === points.length ? 'Deselect All' : 'Select All'}
+            </button>
+            
+            <span className="text-sm text-gray-600">
+              {selectedPoints.length} of {points.length} selected
+            </span>
+          </div>
+          
+          {/* Scoreboard option row */}
+          <div className="flex items-center mb-4">
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="includeScoreboard"
+                checked={includeScoreboard}
+                onChange={() => setIncludeScoreboard(!includeScoreboard)}
+                className="mr-2"
+              />
+              <label htmlFor="includeScoreboard" className="text-sm text-gray-800">
+                Include scoreboard {ffmpegInstalled === false ? '(requires FFmpeg)' : '(coming soon)'}
+              </label>
+            </div>
           </div>
 
-          <div className="max-h-60 overflow-y-auto border rounded-lg">
-            {points.map((point, index) => (
-              <div
-                key={index}
-                className={`flex items-center p-2 border-b ${
-                  selectedPoints.includes(index) ? 'bg-blue-50' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedPoints.includes(index)}
-                  onChange={() => togglePointSelection(index)}
-                  className="mr-3"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-800">
-                    Point {index + 1} - Winner: Player {point.winner}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {point.startTime !== null && point.endTime !== null
-                      ? `${formatTime(point.startTime)} - ${formatTime(point.endTime)} (${formatDuration(point.endTime - point.startTime)})`
-                      : 'Time not set'}
-                  </div>
-                </div>
-                <button
-                  onClick={() => createClipForPoint(point)}
-                  disabled={loading || point.startTime === null || point.endTime === null}
-                  className={`${
-                    loading || point.startTime === null || point.endTime === null
-                      ? 'bg-gray-300 cursor-not-allowed text-gray-600'
-                      : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-                  } text-sm px-2 py-1 rounded`}
+          {/* Adjust height to match the Scoreboard tab's height */}
+          <div className="overflow-y-auto border rounded-lg scrollbar-thin scrollbar-thumb-indigo-200 hover:scrollbar-thumb-indigo-300 scrollbar-track-transparent" 
+               style={{ 
+                 height: 'calc(100vh - 700px)',
+                 minHeight: '350px' 
+               }}>
+            <div className="divide-y divide-gray-200">
+              {points.map((point, index) => (
+                <div
+                  key={index}
+                  className={`flex items-center py-1.5 px-2 ${
+                    selectedPoints.includes(index) ? 'bg-indigo-50' : ''
+                  }`}
                 >
-                  Create Clip
-                </button>
-              </div>
-            ))}
+                  <input
+                    type="checkbox"
+                    checked={selectedPoints.includes(index)}
+                    onChange={() => togglePointSelection(index)}
+                    className="mr-2"
+                  />  
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-800">
+                      Point {index + 1} - Winner: Player {point.winner}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {point.startTime !== null && point.endTime !== null
+                        ? `${formatTime(point.startTime)} - ${formatTime(point.endTime)} (${formatDuration(point.endTime - point.startTime)})`
+                        : 'Time not set'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => createClipForPoint(point)}
+                    disabled={loading || point.startTime === null || point.endTime === null}
+                    className={`${
+                      loading || point.startTime === null || point.endTime === null
+                        ? 'bg-gray-300 cursor-not-allowed text-gray-600'
+                        : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                    } text-xs px-2 py-1 rounded ml-2`}
+                  >
+                    Create Clip
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold mb-3 text-gray-800">Saved Clips</h3>
-          {clips.length === 0 ? (
-            <p className="text-gray-500">No clips available for this video.</p>
-          ) : (
-            <div className="space-y-3">
-              {clips.map((clip) => (
-                <div key={clip.id} className="bg-white p-3 rounded-md shadow">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-medium text-gray-800">{clip.label}</p>
-                      <p className="text-sm text-gray-500">
-                        Created: {new Date(clip.createdAt).toLocaleString()}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Duration: {formatDuration(clip.endTime - clip.startTime)}
-                      </p>
+        {/* Only render the saved clips and exports sections if clipsSavedBelow is false */}
+        {!clipsSavedBelow && (
+          <>
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3 text-gray-800">Saved Clips</h3>
+              {clips.length === 0 ? (
+                <p className="text-gray-500">No clips available for this video.</p>
+              ) : (
+                <div className="space-y-3">
+                  {clips.map((clip) => (
+                    <div key={clip.id} className="bg-white p-3 rounded-md shadow">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-gray-800">{clip.label}</p>
+                          <p className="text-sm text-gray-500">
+                            Created: {new Date(clip.createdAt).toLocaleString()}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Duration: {formatDuration(clip.endTime - clip.startTime)}
+                          </p>
+                        </div>
+                        <div className="flex space-x-2">
+                          <a 
+                            href={`http://localhost:3000/${clip.path}`} 
+                            className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200"
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                          >
+                            View
+                          </a>
+                          <a 
+                            href={`http://localhost:3000/${clip.path}`} 
+                            className="bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200"
+                            download={`clip-${clip.label.replace(/\s+/g, '-')}.mp4`}
+                          >
+                            Download
+                          </a>
+                          <button
+                            onClick={() => deleteClip(clip.id)}
+                            className="bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex space-x-2">
-                      <a 
-                        href={`http://localhost:3000/${clip.path}`} 
-                        className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200"
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                      >
-                        View
-                      </a>
-                      <a 
-                        href={`http://localhost:3000/${clip.path}`} 
-                        className="bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200"
-                        download={`clip-${clip.label.replace(/\s+/g, '-')}.mp4`}
-                      >
-                        Download
-                      </a>
-                      <button
-                        onClick={() => deleteClip(clip.id)}
-                        className="bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
 
-        <div>
-          <h3 className="text-lg font-semibold mb-3 text-gray-800">Saved Exports</h3>
-          {exports.length === 0 ? (
-            <p className="text-gray-500">No exports available for this video.</p>
-          ) : (
-            <div className="space-y-3">
-              {exports.map((exportItem) => (
-                <div key={exportItem.id} className="bg-white p-3 rounded-md shadow">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        Export {exportItem.id} ({exportItem.points} points)
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Created: {new Date(exportItem.createdAt).toLocaleString()}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Scoreboard: {exportItem.includeScoreboard ? 'Included' : 'Not included'}
-                      </p>
+            <div>
+              <h3 className="text-lg font-semibold mb-3 text-gray-800">Saved Exports</h3>
+              {exports.length === 0 ? (
+                <p className="text-gray-500">No exports available for this video.</p>
+              ) : (
+                <div className="space-y-3">
+                  {exports.map((exportItem) => (
+                    <div key={exportItem.id} className="bg-white p-3 rounded-md shadow">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            Export {exportItem.id} ({exportItem.points} points)
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Created: {new Date(exportItem.createdAt).toLocaleString()}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Scoreboard: {exportItem.includeScoreboard ? 'Included' : 'Not included'}
+                          </p>
+                        </div>
+                        <div className="flex space-x-2">
+                          <a 
+                            href={`http://localhost:3000/${exportItem.path}`} 
+                            className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200"
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                          >
+                            View
+                          </a>
+                          <a 
+                            href={`http://localhost:3000/${exportItem.path}`} 
+                            className="bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200"
+                            download={`export-${exportItem.id}.mp4`}
+                          >
+                            Download
+                          </a>
+                          <button
+                            onClick={() => deleteExport(exportItem.id)}
+                            className="bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex space-x-2">
-                      <a 
-                        href={`http://localhost:3000/${exportItem.path}`} 
-                        className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200"
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                      >
-                        View
-                      </a>
-                      <a 
-                        href={`http://localhost:3000/${exportItem.path}`} 
-                        className="bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200"
-                        download={`export-${exportItem.id}.mp4`}
-                      >
-                        Download
-                      </a>
-                      <button
-                        onClick={() => deleteExport(exportItem.id)}
-                        className="bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
 };
+
+// Export the ClipMetadata and ExportMetadata types so they can be used in the SavedClipsAndExports component
+export type { ClipMetadata, ExportMetadata };
 
 export default ClipManager;

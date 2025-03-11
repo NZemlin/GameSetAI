@@ -71,11 +71,11 @@ export const handleVideoUpload = async (req: Request, res: Response) => {
     const videoName = req.body.name || req.file.originalname.split('.')[0];
     const fileId = req.file.filename.split('.')[0];
 
-    // Save metadata
+    // Save metadata with server-generated filename
     const metadata = await getMetadata();
     metadata[fileId] = {
       name: videoName,
-      originalFilename: req.file.originalname,
+      originalFilename: req.file.filename,
       uploadDate: new Date().toISOString(),
     };
     await saveMetadata(metadata);
@@ -94,4 +94,4 @@ export const handleVideoUpload = async (req: Request, res: Response) => {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to upload file' });
   }
-}; 
+};

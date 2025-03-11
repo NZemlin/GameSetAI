@@ -1,4 +1,4 @@
-import { Request, Response, RequestHandler } from 'express';
+import { RequestHandler } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'child_process';
@@ -36,6 +36,7 @@ interface ExportMetadata {
   includeScoreboard: boolean;
   path: string;
   createdAt: string;
+  label?: string;
 }
 
 // Types for metadata collections
@@ -777,5 +778,151 @@ export const deleteExport: RequestHandler = async (req, res) => {
   } catch (err) {
     console.error('Error deleting export:', err);
     res.status(500).json({ error: 'Failed to delete export' });
+  }
+};
+
+/**
+ * Rename a clip
+ * PUT /api/processing/clips/:id/rename
+ */
+export const renameClip: RequestHandler = async (req, res) => {
+  const { id } = req.params;
+  const { label } = req.body;
+
+  if (!label || !label.trim()) {
+    res.status(400).json({ error: 'Label cannot be empty' });
+    return;
+  }
+
+  try {
+    await ensureProcessedDir();
+    const clipsMetadataPath = path.join(processedVideosPath, 'clips.json');
+    
+    let clipsMetadata: { [id: string]: ClipMetadata } = {};
+    
+    try {
+      const data = await fs.readFile(clipsMetadataPath, 'utf8');
+      clipsMetadata = JSON.parse(data);
+    } catch (error) {
+      // If the file doesn't exist or has invalid JSON, start with an empty object
+      clipsMetadata = {};
+    }
+    
+    // Check if the clip exists
+    if (!clipsMetadata[id]) {
+      res.status(404).json({ error: 'Clip not found' });
+      return;
+    }
+    
+    // Update the clip's label
+    clipsMetadata[id].label = label;
+    
+    // Save the updated metadata
+    await fs.writeFile(clipsMetadataPath, JSON.stringify(clipsMetadata, null, 2));
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Clip renamed successfully',
+      clip: clipsMetadata[id]
+    });
+  } catch (error) {
+    console.error('Error renaming clip:', error);
+    res.status(500).json({ error: 'Failed to rename clip' });
+  }
+};
+
+/**
+ * Rename an export
+ * PUT /api/processing/exports/:id/rename
+ */
+export const renameExport: RequestHandler = async (req, res) => {
+  const { id } = req.params;
+  const { label } = req.body;
+
+  if (!label || !label.trim()) {
+    res.status(400).json({ error: 'Label cannot be empty' });
+    return;
+  }
+
+  try {
+    await ensureProcessedDir();
+    const exportsMetadataPath = path.join(processedVideosPath, 'exports.json');
+    
+    let exportsMetadata: { [id: string]: ExportMetadata } = {};
+    
+    try {
+      const data = await fs.readFile(exportsMetadataPath, 'utf8');
+      exportsMetadata = JSON.parse(data);
+    } catch (error) {
+      // If the file doesn't exist or has invalid JSON, start with an empty object
+      exportsMetadata = {};
+    }
+    
+    // Check if the export exists
+    if (!exportsMetadata[id]) {
+      res.status(404).json({ error: 'Export not found' });
+      return;
+    }
+    
+    // Update the export's label (ensure ExportMetadata interface has a label property)
+    exportsMetadata[id].label = label;
+    
+    // Save the updated metadata
+    await fs.writeFile(exportsMetadataPath, JSON.stringify(exportsMetadata, null, 2));
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Export renamed successfully',
+      export: exportsMetadata[id]
+    });
+  } catch (error) {
+    console.error('Error renaming export:', error);
+    res.status(500).json({ error: 'Failed to rename export' });
+  }
+};
+
+// Function to sanitize file names by replacing invalid characters
+const sanitizeFileName = (name: string): string => {
+  const invalidChars = /[\\/:*?"<>|]/g;
+  return name.replace(invalidChars, '_');
+};
+
+export const downloadClip: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clipsMetadataPath = path.join(__dirname, '../../processed/clips.json');
+    const clipsMetadata = JSON.parse(await fs.readFile(clipsMetadataPath, 'utf8'));
+    const clip = clipsMetadata[id];
+    if (!clip) {
+      res.status(404).json({ error: 'Clip not found' });
+      return;
+    }
+    const filePath = path.join(__dirname, `../../${clip.path}`);
+    const sanitizedLabel = sanitizeFileName(clip.label);
+    const downloadFileName = sanitizedLabel ? `${sanitizedLabel}.mp4` : `clip-${id}.mp4`;
+    res.download(filePath, downloadFileName);
+  } catch (err) {
+    console.error('Error downloading clip:', err);
+    res.status(500).json({ error: 'Failed to download clip' });
+  }
+};
+
+export const downloadExport: RequestHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const exportsMetadataPath = path.join(__dirname, '../../processed/exports.json');
+    const exportsMetadata = JSON.parse(await fs.readFile(exportsMetadataPath, 'utf8'));
+    const exportItem = exportsMetadata[id];
+    if (!exportItem) {
+      res.status(404).json({ error: 'Export not found' });
+      return;
+    }
+    const filePath = path.join(__dirname, `../../${exportItem.path}`);
+    const sanitizedLabel = sanitizeFileName(exportItem.label);
+    const downloadFileName = sanitizedLabel ? `${sanitizedLabel}.mp4` : `export-${id}.mp4`;
+    res.download(filePath, downloadFileName);
+  } catch (err) {
+    console.error('Error downloading export:', err);
+    res.status(500).json({ error: 'Failed to download export' });
   }
 };

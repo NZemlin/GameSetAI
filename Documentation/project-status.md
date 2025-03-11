@@ -24,6 +24,9 @@
    - Basic video playback
    - Video metadata management
    - Individual video view/edit pages
+   - Video deletion with confirmation dialog
+   - Improved input styling for video name editing (rounded corners, transparent background)
+   - Backend file cleanup when videos are deleted
 
 4. **Match Configuration**
    - Match type selection (Full Match/Tiebreak)
@@ -62,19 +65,28 @@
    - Combined clip export with multiple points
    - Download links for processed videos
    - View capabilities for exported videos
-   - Clip management (creation, deletion)
+   - Clip management (creation, deletion, renaming)
+   - Export management (creation, deletion, renaming)
    - Time formatting in MM:SS format for better readability
    - User-friendly labels and timestamps for saved clips
+   - Consistent UI for clips and exports management
+   - Always-visible saved clips and exports section
+   - Hover-to-play video previews for clips and exports
+   - Click-to-rename title functionality for clips and exports
+   - Accurate duration display for exports using video metadata
+   - Intuitive export info display with duration and points count
 
 ## In Progress
 1. **Video Processing**
    - Optional scoreboard inclusion in exports
-   - Rename video clips
-   - Clip video preview
 
 2. **UI/UX Enhancements**
    - Improving text contrast and visibility
    - Optimizing component layouts for better user experience
+   - Redesigned VideoEdit page with improved clip/export management
+   - Card-based grid layout for saved clips and exports
+   - Tabbed interface for efficient navigation between clips and exports
+   - Height constraints to prevent excessive scrolling
 
 ## Next Steps
 1. **Score Tracking Enhancement**

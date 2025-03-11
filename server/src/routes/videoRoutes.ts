@@ -1,6 +1,6 @@
 import express from 'express';
 import { upload, handleVideoUpload } from '../controllers/uploadController';
-import { listVideos, renameVideo, getVideo } from '../controllers/videoController';
+import { listVideos, renameVideo, getVideo, deleteVideo } from '../controllers/videoController';
 
 const router = express.Router();
 
@@ -16,4 +16,7 @@ router.get('/videos/:id', getVideo);
 // Route for renaming video
 router.put('/videos/:id/rename', renameVideo);
 
-export default router; 
+// Route for deleting video
+router.delete('/videos/:id', deleteVideo);
+
+export default router;
