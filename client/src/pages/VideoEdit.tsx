@@ -33,6 +33,16 @@ const VideoEdit = () => {
   const [points, setPoints] = useState<Point[]>([]);
   const [activeTab, setActiveTab] = useState<'score' | 'clips'>('score');
   const [refreshClips, setRefreshClips] = useState(0);
+  const [isLoadingPoints, setIsLoadingPoints] = useState(false);
+  const [isSavingPoints, setIsSavingPoints] = useState(false);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+  
+  // Track if points were loaded from the server
+  const pointsLoadedRef = useRef(false);
+  
+  // Track auto-save timeout
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [matchConfig, setMatchConfig] = useState<PersistedMatchConfig>({
     type: 'match',
@@ -52,7 +62,138 @@ const VideoEdit = () => {
   const memoizedPlayerNames = useMemo(() => playerNames, [playerNames]);
   const memoizedPoints = useMemo(() => points, [points]);
 
-  // Memoize callbacks to prevent unnecessary re-renders
+  // Function to load points and match data for a video
+  const loadVideoPoints = useCallback(async (videoId: string) => {
+    if (!videoId || pointsLoadedRef.current) return;
+    
+    setIsLoadingPoints(true);
+    try {
+      const response = await axios.get(`http://localhost:3000/api/match/videos/${videoId}/match`);
+      
+      // Load points if available
+      if (response.data && response.data.points && Array.isArray(response.data.points)) {
+        setPoints(response.data.points);
+        setLastSaved(response.data.lastUpdated);
+        pointsLoadedRef.current = true;
+        console.log(`Loaded ${response.data.points.length} points for video ${videoId}`);
+      }
+      
+      // Load match configuration if available
+      if (response.data && response.data.matchConfig) {
+        setMatchConfig(response.data.matchConfig);
+        console.log('Loaded match configuration from server');
+      }
+      
+      // Load player names if available
+      if (response.data && response.data.playerNames) {
+        setPlayerNames(response.data.playerNames);
+        console.log('Loaded player names from server');
+      }
+    } catch (err) {
+      console.error('Error loading points:', err);
+      // Non-critical error, don't show to user
+    } finally {
+      setIsLoadingPoints(false);
+    }
+  }, []);
+
+  // Function to save points and match data for a video
+  const saveVideoPoints = useCallback(async (videoId: string, pointsToSave: Point[]) => {
+    if (!videoId) return;
+    
+    setIsSavingPoints(true);
+    try {
+      const response = await axios.post(`http://localhost:3000/api/match/videos/${videoId}/match`, {
+        points: pointsToSave,
+        matchConfig,
+        playerNames
+      });
+      setLastSaved(response.data.lastUpdated);
+      
+      if (pointsToSave.length === 0) {
+        console.log(`Saved match configuration and player names for video ${videoId}`);
+      } else {
+        console.log(`Saved ${pointsToSave.length} points, match configuration, and player names for video ${videoId}`);
+      }
+    } catch (err) {
+      console.error('Error saving data:', err);
+      // Display error in the UI rather than using toast
+    } finally {
+      setIsSavingPoints(false);
+    }
+  }, [matchConfig, playerNames]);
+
+  // Function to reset points and match configuration
+  const resetScoringData = useCallback(async () => {
+    if (!id) return;
+    
+    if (!confirm('Are you sure you want to reset the match? This will clear all points, reset the match configuration, and reset player names to default. This action cannot be undone.')) {
+      return;
+    }
+    
+    setIsResetting(true);
+    try {
+      await axios.post(`http://localhost:3000/api/match/videos/${id}/match/reset`);
+      
+      // Reset local state
+      setPoints([]);
+      setMatchConfig({
+        type: 'match',
+        tiebreakPoints: 7,
+        noAd: false,
+        firstServer: null,
+        isConfigured: false
+      });
+      
+      // Reset player names to default
+      setPlayerNames({
+        player1: 'Player 1',
+        player2: 'Player 2'
+      });
+      
+      // Clear the last saved timestamp
+      setLastSaved(null);
+      
+      // Reset the points loaded flag so we can start fresh
+      pointsLoadedRef.current = false;
+      
+      // Force Scoreboard remount after reset
+      setRefreshClips(prev => prev + 1);
+      
+      console.log('Successfully reset match data');
+    } catch (err) {
+      console.error('Error resetting scoring data:', err);
+    } finally {
+      setIsResetting(false);
+    }
+  }, [id]);
+
+  // Enhanced points change handler with auto-save
+  const handlePointsChange = useCallback((newPoints: Point[]) => {
+    setPoints(prev => {
+      // Avoid update if points haven't changed (deep comparison)
+      if (JSON.stringify(prev) === JSON.stringify(newPoints)) {
+        return prev;
+      }
+      
+      // Schedule auto-save
+      if (id) {
+        // Clear any existing timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        
+        // Set a new timeout
+        saveTimeoutRef.current = setTimeout(() => {
+          saveVideoPoints(id, newPoints);
+        }, 2000);
+      }
+      
+      return newPoints;
+    });
+  }, [id, saveVideoPoints]);
+
+  // Enhanced match config change handler to save when config changes
   const handleMatchConfigChange = useCallback((config: Partial<PersistedMatchConfig>) => {
     setMatchConfig(prev => {
       const newConfig = { ...prev, ...config };
@@ -66,34 +207,56 @@ const VideoEdit = () => {
       ) {
         return prev;
       }
+      
+      // Config has changed, schedule a save
+      if (id) {
+        // Clear any existing timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        
+        // Set a new timeout
+        saveTimeoutRef.current = setTimeout(() => {
+          saveVideoPoints(id, points);
+        }, 2000);
+      }
+      
       return newConfig;
     });
-  }, []);
+  }, [id, points, saveVideoPoints]);
 
-  const handlePointsChange = useCallback((newPoints: Point[]) => {
-    setPoints(prev => {
-      // Avoid update if points haven't changed (deep comparison)
-      if (JSON.stringify(prev) === JSON.stringify(newPoints)) {
-        return prev;
-      }
-      return newPoints;
-    });
-  }, []);
-
+  // Enhanced player names change handler to save when names change
   const handlePlayerNamesChange = useCallback((player1: string, player2: string) => {
     setPlayerNames(prev => {
       if (prev.player1 === player1 && prev.player2 === player2) {
         return prev;
       }
-      return { player1, player2 };
+      
+      const newNames = { player1, player2 };
+      
+      // Names have changed, schedule a save
+      if (id) {
+        // Clear any existing timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        
+        // Set a new timeout
+        saveTimeoutRef.current = setTimeout(() => {
+          saveVideoPoints(id, points);
+        }, 2000);
+      }
+      
+      return newNames;
     });
-  }, []);
+  }, [id, points, saveVideoPoints]);
 
   // Handler to trigger refresh of saved clips and exports
   const handleClipCreated = () => {
     setRefreshClips(prev => prev + 1);
   };
 
+  // Load the video
   useEffect(() => {
     const fetchVideo = async () => {
       try {
@@ -110,6 +273,25 @@ const VideoEdit = () => {
     fetchVideo();
   }, [id]);
 
+  // Load points when the component mounts
+  useEffect(() => {
+    if (id) {
+      loadVideoPoints(id);
+    }
+  }, [id, loadVideoPoints]);
+  
+  // Save data when component unmounts if there are pending changes
+  useEffect(() => {
+    return () => {
+      // If there's a pending timeout, clear it and save immediately
+      if (saveTimeoutRef.current && id) {
+        clearTimeout(saveTimeoutRef.current);
+        saveVideoPoints(id, points);
+        console.log('Saving data on component unmount');
+      }
+    };
+  }, [id, points, saveVideoPoints]);
+
   const handleNameChange = async (newName: string) => {
     if (!video) return;
     try {
@@ -125,6 +307,31 @@ const VideoEdit = () => {
   const handleSeek = (time: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
+    }
+  };
+
+  // Function to immediately save current state before navigation
+  const saveAndNavigate = async () => {
+    if (id) {
+      // Clear any pending auto-save timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      
+      // Save immediately
+      try {
+        await saveVideoPoints(id, points);
+        // Navigate after save completes
+        navigate('/videos');
+      } catch (err) {
+        console.error('Error saving before navigation:', err);
+        // Navigate anyway even if save fails
+        navigate('/videos');
+      }
+    } else {
+      // If no ID, just navigate
+      navigate('/videos');
     }
   };
 
@@ -160,12 +367,43 @@ const VideoEdit = () => {
               Uploaded {new Date(video.createdAt).toLocaleDateString()}
             </span>
           </div>
-          <button
-            onClick={() => navigate('/videos')}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            Back to Videos
-          </button>
+          <div className="flex items-center space-x-3">
+            {isLoadingPoints && (
+              <span className="text-sm text-blue-600">Loading points...</span>
+            )}
+            {isSavingPoints && (
+              <span className="text-sm text-blue-600">Saving points...</span>
+            )}
+            {isResetting && (
+              <span className="text-sm text-blue-600">Resetting scoring data...</span>
+            )}
+            {!isLoadingPoints && !isSavingPoints && !isResetting && lastSaved && (
+              <span className="text-sm text-gray-500">
+                Last saved: {new Date(lastSaved).toLocaleDateString(undefined, {
+                  year: '2-digit',
+                  month: 'numeric',
+                  day: 'numeric'
+                })} {new Date(lastSaved).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              </span>
+            )}
+            <button
+              onClick={resetScoringData}
+              disabled={isResetting}
+              className={`inline-flex items-center px-4 py-2 border text-sm font-medium rounded-md 
+                text-red-600 border-red-300 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500
+                ${isResetting ? 'opacity-50 cursor-not-allowed' : ''}
+              `}
+              title="Reset match configuration and clear all points"
+            >
+              Reset Match
+            </button>
+            <button
+              onClick={saveAndNavigate}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Back to Videos
+            </button>
+          </div>
         </div>
 
         <div className="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
@@ -222,6 +460,7 @@ const VideoEdit = () => {
                   {activeTab === 'score' ? (
                     <div>
                       <Scoreboard 
+                        key={`scoreboard-${refreshClips}`}
                         onPlayerNamesChange={handlePlayerNamesChange}
                         videoRef={videoRef}
                         onPointsChange={handlePointsChange}
@@ -238,6 +477,31 @@ const VideoEdit = () => {
                         points={memoizedPoints}
                         clipsSavedBelow={true}
                         onClipCreated={handleClipCreated}
+                        videoName={video.name}
+                        player1={points.length > 0 && points[0].scoreState ? 
+                          points[0].scoreState.player1 : 
+                          {
+                            name: playerNames.player1,
+                            completedSets: [],
+                            currentSet: 0,
+                            currentGame: 0,
+                            isServing: matchConfig.firstServer === 1
+                          }
+                        }
+                        player2={points.length > 0 && points[0].scoreState ? 
+                          points[0].scoreState.player2 : 
+                          {
+                            name: playerNames.player2,
+                            completedSets: [],
+                            currentSet: 0,
+                            currentGame: 0,
+                            isServing: matchConfig.firstServer === 2
+                          }
+                        }
+                        matchConfig={{
+                          ...matchConfig,
+                          inTiebreak: false
+                        }}
                       />
                     </div>
                   )}

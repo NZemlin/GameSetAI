@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import videoRoutes from './routes/videoRoutes';
 import videoProcessingRoutes from './routes/videoProcessingRoutes';
 import authRoutes from './routes/authRoutes';
+import matchRoutes from './routes/matchRoutes';
 
 // Load .env file explicitly from the project root
 const result = config({ path: path.resolve(__dirname, '../../.env') });
@@ -67,10 +68,12 @@ const logRoutes = (router: any, label: string) => {
 logRoutes(videoRoutes, 'Loading video routes from');
 logRoutes(videoProcessingRoutes, 'Loading video processing routes from');
 logRoutes(authRoutes, 'Loading auth routes from');
+logRoutes(matchRoutes, 'Loading match routes from');
 
 app.use('/api/auth', authRoutes);
 app.use('/api', videoRoutes);
 app.use('/api/processing', videoProcessingRoutes);
+app.use('/api/match', matchRoutes);
 
 app.get('/api/processing/ffmpeg-status', (req: Request, res: Response) => {
   res.status(200).json({

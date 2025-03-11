@@ -34,6 +34,7 @@
    - Scoring system selection (Regular/No-Ad)
    - Server selection interface
    - Point tracking system with video integration
+   - Persistence of match configuration between sessions
 
 5. **Match Scoring System**
    - Score tracking implementation
@@ -57,6 +58,12 @@
    - Visual timeline markers for point start/end times
    - Point winner modification
    - Validation for point time boundaries
+   - Save points across editing sessions
+   - Auto-save of points, match configuration, and player names
+   - Reset scoring functionality with confirmation dialog
+   - Automatic server selection based on saved points
+   - Immediate match reconfiguration after reset without page refresh
+   - Human-friendly last saved timestamp with date and time
 
 6. **Video Processing**
    - FFmpeg detection and status reporting
@@ -75,10 +82,21 @@
    - Click-to-rename title functionality for clips and exports
    - Accurate duration display for exports using video metadata
    - Intuitive export info display with duration and points count
+   - Smart default export naming with video name and date
+   - Streamlined export cards with simplified information display
+   - Scoreboard overlay option for clips and exports with accurate match data
+   - Persistent player and match information for scoreboard overlays
+   - Enhanced visual scoreboard overlay with match styling
+   - Consistent scoreboard score logic using previous point state
+   - Correct pre-point score display in scoreboard overlays
+   - Final score display with 5-second post-roll showing updated score after last point
+   - Intelligent post-roll score determination prioritizing actual point data
+   - Automatic cleanup of temporary files during failed export attempts
+   - Robust error handling with detailed logs and user feedback
 
 ## In Progress
 1. **Video Processing**
-   - Optional scoreboard inclusion in exports
+   - Performance optimizations for video processing
 
 2. **UI/UX Enhancements**
    - Improving text contrast and visibility

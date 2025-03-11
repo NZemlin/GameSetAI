@@ -54,3 +54,7 @@ server/uploads/*
 # Processed video files
 server/processed/*
 !server/processed/.gitkeep 
+
+# Data files
+server/data/*
+!server/data/.gitkeep 

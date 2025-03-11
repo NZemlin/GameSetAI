@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Point } from '../types/scoreboard';
+import { Point, Player, MatchConfig } from '../types/scoreboard';
 
 // Helper function to format seconds to MM:SS format
 const formatTime = (seconds: number): string => {
@@ -32,6 +32,10 @@ interface ClipManagerProps {
   points: Point[];
   clipsSavedBelow?: boolean;
   onClipCreated?: () => void;
+  videoName?: string;
+  player1?: Player;
+  player2?: Player;
+  matchConfig?: MatchConfig;
 }
 
 interface ClipMetadata {
@@ -54,7 +58,16 @@ interface ExportMetadata {
   label?: string;
 }
 
-const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }: ClipManagerProps) => {
+const ClipManager = ({ 
+  videoId, 
+  points, 
+  clipsSavedBelow = false, 
+  onClipCreated, 
+  videoName,
+  player1,
+  player2,
+  matchConfig 
+}: ClipManagerProps) => {
   const [clips, setClips] = useState<ClipMetadata[]>([]);
   const [exports, setExports] = useState<ExportMetadata[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +75,7 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
-  const [includeScoreboard, setIncludeScoreboard] = useState(true);
+  const [includeScoreboard, setIncludeScoreboard] = useState<boolean>(false);
   const [ffmpegInstalled, setFffmpegInstalled] = useState<boolean | null>(null);
 
   // Get the JWT token from localStorage
@@ -120,24 +133,104 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
     checkFfmpegStatus();
   }, [token]);
 
-  // Function to create a clip for a single point
-  const createClipForPoint = async (point: Point) => {
-    if (point.startTime === null || point.endTime === null) return;
-
+  // Function to create a clip
+  const createClip = async (startTime: number, endTime: number, label?: string, pointIndex?: number) => {
     setLoading(true);
     setError(null);
     setSuccess(null);
-
+    
     try {
+      // Prepare the scoreboard data if scoreboard is to be included
+      let scoreData = null;
+      if (includeScoreboard && player1 && player2 && matchConfig) {
+        // Find the point that corresponds to this time range (if any)
+        const matchingPointIndex = points.findIndex(p => 
+          p.startTime !== null && 
+          p.endTime !== null && 
+          Math.abs(p.startTime - startTime) < 0.1 && 
+          Math.abs(p.endTime - endTime) < 0.1
+        );
+        
+        // Use the provided pointIndex if available, otherwise use the matching point
+        const currentPointIndex = pointIndex !== undefined ? pointIndex : matchingPointIndex;
+        
+        // If we found a matching point, we'll use the backend's consistent helper function
+        // by passing all the points and the current point's index
+        if (currentPointIndex !== -1) {
+          // We'll let the backend determine the score state
+          const response = await axios.post('http://localhost:3000/api/processing/clip', {
+            videoId,
+            startTime,
+            endTime,
+            label,
+            includeScoreboard,
+            matchData: {
+              player1,
+              player2,
+              matchConfig
+            },
+            pointIndex: currentPointIndex,
+            points: points
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          setClips(prevClips => [...prevClips, response.data.clip]);
+          setSuccess(response.data.message || 'Clip created successfully');
+          
+          if (response.data.ffmpegInstalled !== undefined) {
+            setFffmpegInstalled(response.data.ffmpegInstalled);
+          }
+          
+          if (!response.data.ffmpegInstalled) {
+            setSuccess('Clip metadata created, but FFmpeg is not installed. Only original video will be referenced.');
+          }
+          
+          // Notify parent component that a clip has been created
+          if (onClipCreated) {
+            onClipCreated();
+          }
+          
+          setLoading(false);
+          return;
+        }
+        
+        // If we didn't find a matching point, prepare the score data locally
+        // Start with default state (0-0)
+        scoreData = {
+          player1: { 
+            ...player1,
+            completedSets: [],
+            currentSet: 0,
+            currentGame: 0,
+            isServing: matchConfig.firstServer === 1
+          },
+          player2: { 
+            ...player2,
+            completedSets: [],
+            currentSet: 0,
+            currentGame: 0,
+            isServing: matchConfig.firstServer === 2
+          },
+          matchConfig: { 
+            ...matchConfig,
+            inTiebreak: matchConfig.type === 'tiebreak' 
+          },
+          pointTime: startTime
+        };
+      }
+      
       const response = await axios.post('http://localhost:3000/api/processing/clip', {
         videoId,
-        startTime: point.startTime,
-        endTime: point.endTime,
-        label: `Point ${points.indexOf(point) + 1} (Winner: Player ${point.winner})`
+        startTime,
+        endTime,
+        label,
+        includeScoreboard,
+        scoreData
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
-
+      
       setClips(prevClips => [...prevClips, response.data.clip]);
       setSuccess(response.data.message || 'Clip created successfully');
       
@@ -162,7 +255,7 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
   };
 
   // Function to export selected points
-  const exportSelectedPoints = async () => {
+  const exportSelectedPoints = async (videoName?: string) => {
     if (selectedPoints.length === 0) {
       setError('Please select at least one point to export');
       return;
@@ -177,11 +270,23 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
         point => point.startTime !== null && point.endTime !== null
       );
 
+      // Prepare match data if scoreboard is to be included
+      let matchData = null;
+      if (includeScoreboard && player1 && player2 && matchConfig) {
+        matchData = {
+          player1,
+          player2,
+          matchConfig
+        };
+      }
+
       // Always export as a single combined video
       const response = await axios.post('http://localhost:3000/api/processing/export', {
         videoId,
         points: pointsToExport,
-        includeScoreboard
+        includeScoreboard,
+        videoName,
+        matchData
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -271,7 +376,7 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
           {/* Main controls row with Export and Select All */}
           <div className="flex items-center mb-3">
             <button
-              onClick={exportSelectedPoints}
+              onClick={() => exportSelectedPoints(videoName)}
               disabled={exportLoading || selectedPoints.length === 0}
               className={`${
                 exportLoading || selectedPoints.length === 0
@@ -301,13 +406,20 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
                 type="checkbox"
                 id="includeScoreboard"
                 checked={includeScoreboard}
-                onChange={() => setIncludeScoreboard(!includeScoreboard)}
+                onChange={e => setIncludeScoreboard(e.target.checked)}
                 className="mr-2"
+                disabled={!player1 || !player2 || !matchConfig}
               />
               <label htmlFor="includeScoreboard" className="text-sm text-gray-800">
                 Include scoreboard {ffmpegInstalled === false ? '(requires FFmpeg)' : '(coming soon)'}
               </label>
             </div>
+            {includeScoreboard && (!player1 || !player2 || !matchConfig) && (
+              <p className="text-red-500 text-sm mt-1">
+                Player information or match configuration is missing.
+                Scoreboard cannot be included.
+              </p>
+            )}
           </div>
 
           {/* Adjust height to match the Scoreboard tab's height */}
@@ -341,7 +453,16 @@ const ClipManager = ({ videoId, points, clipsSavedBelow = false, onClipCreated }
                     </div>
                   </div>
                   <button
-                    onClick={() => createClipForPoint(point)}
+                    onClick={() => {
+                      if (point.startTime !== null && point.endTime !== null) {
+                        createClip(
+                          point.startTime, 
+                          point.endTime, 
+                          `Point ${index + 1} (Winner: Player ${point.winner})`,
+                          index
+                        );
+                      }
+                    }}
                     disabled={loading || point.startTime === null || point.endTime === null}
                     className={`${
                       loading || point.startTime === null || point.endTime === null

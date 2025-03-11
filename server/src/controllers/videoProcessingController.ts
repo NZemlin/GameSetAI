@@ -3,6 +3,16 @@ import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
+import { renderClipWithScoreboard } from '../services/scoreboardRenderer';
+
+/**
+ * Formats a time in seconds to a human-readable MM:SS format
+ */
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
 
 // Interface for clip request
 interface ClipRequest {
@@ -26,6 +36,7 @@ interface ClipMetadata {
   createdAt: string;
   isCompilation?: boolean;
   sourceClips?: ClipMetadata[];
+  includeScoreboard: boolean;
 }
 
 // Interface for export metadata
@@ -123,90 +134,214 @@ const createMockClip = async (
     endTime,
     label: label || `Clip from ${startTime.toFixed(2)} to ${endTime.toFixed(2)}`,
     path: `uploads/${videoFile}`, // Points to original video
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    includeScoreboard: false
   };
   
   return clipMetadata;
 };
 
 /**
- * Creates a clip from a video using the specified start and end times
+ * Helper function to get the previous point's score state or initial state
+ * Used to make sure scoreboard display logic is consistent across clips and exports
+ */
+const getPreviousPointScoreState = (
+  points: any[], 
+  currentIndex: number,
+  matchData: any
+): any => {
+  // If there's a previous point with score state, use that
+  if (currentIndex > 0 && points[currentIndex - 1].scoreState) {
+    return {
+      player1: { ...matchData.player1, ...points[currentIndex - 1].scoreState.player1 },
+      player2: { ...matchData.player2, ...points[currentIndex - 1].scoreState.player2 },
+      matchConfig: { 
+        ...matchData.matchConfig,
+        inTiebreak: points[currentIndex - 1].scoreState.inTiebreak 
+      },
+      pointTime: points[currentIndex].startTime
+    };
+  } 
+  // For first point, use initial state (0-0)
+  else {
+    return {
+      player1: { 
+        ...matchData.player1,
+        completedSets: [],
+        currentSet: 0,
+        currentGame: 0,
+        isServing: matchData.matchConfig.firstServer === 1
+      },
+      player2: { 
+        ...matchData.player2,
+        completedSets: [],
+        currentSet: 0,
+        currentGame: 0,
+        isServing: matchData.matchConfig.firstServer === 2
+      },
+      matchConfig: { 
+        ...matchData.matchConfig,
+        inTiebreak: matchData.matchConfig.type === 'tiebreak' 
+      },
+      pointTime: points[currentIndex].startTime
+    };
+  }
+};
+
+/**
+ * Creates a clip from a video using the specified start and end times, with an additional 5-second post-roll.
  */
 export const createClip: RequestHandler<any, any> = async (req, res) => {
   await ensureProcessedDir();
-  
+
   try {
-    const { videoId, startTime, endTime, label } = req.body;
-    
+    const { videoId, startTime, endTime, label, includeScoreboard = false, scoreData = null, pointIndex, points, matchData } = req.body;
+
+    // Validate required parameters
     if (!videoId || startTime === undefined || endTime === undefined) {
       res.status(400).json({ error: 'Missing required parameters: videoId, startTime, endTime' });
       return;
     }
-    
+
     // Find the source video
     const uploadsDir = path.join(__dirname, '../../uploads');
     const files = await fs.readdir(uploadsDir);
     const videoFile = files.find(filename => filename.startsWith(videoId));
-    
+
     if (!videoFile) {
       res.status(404).json({ error: 'Source video not found' });
       return;
     }
-    
+
     const clipId = uuidv4();
     const isFfmpegInstalled = await checkFfmpegInstalled();
     let clipMetadata: ClipMetadata;
-    
+    const postRollDuration = 5; // Define the post-roll duration as 5 seconds
+
     if (isFfmpegInstalled) {
       const inputPath = path.join(uploadsDir, videoFile);
       const outputFilename = `${clipId}.mp4`;
       const outputPath = path.join(processedVideosPath, outputFilename);
-      
-      // Use FFmpeg to create the clip
-      await new Promise<void>((resolve, reject) => {
-        const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-        const ffmpegCommand = `"${ffmpegPath}" -ss ${startTime} -i "${inputPath}" -to ${endTime - startTime} -c copy -avoid_negative_ts 1 "${outputPath}"`;
-        
-        exec(ffmpegCommand, (error, stdout, stderr) => {
-          if (error) {
-            console.error(`FFmpeg error: ${error.message}`);
-            reject(error);
-            return;
-          }
-          resolve();
+
+      let clipScoreData = scoreData;
+
+      // Determine the score state before the point if scoreboard is included
+      if (includeScoreboard && points && pointIndex !== undefined && matchData) {
+        clipScoreData = getPreviousPointScoreState(points, pointIndex, matchData);
+      }
+
+      if (includeScoreboard && clipScoreData && points && pointIndex !== undefined && matchData) {
+        // Temporary file paths for main clip and post-roll
+        const tempMainPath = path.join(processedVideosPath, `temp_main_${clipId}.mp4`);
+        const tempPostrollPath = path.join(processedVideosPath, `temp_postroll_${clipId}.mp4`);
+        const listFilePath = path.join(processedVideosPath, `temp_list_${clipId}.txt`);
+
+        // Render main clip (startTime to endTime) with score before the point
+        await renderClipWithScoreboard(
+          inputPath,
+          tempMainPath,
+          startTime,
+          endTime - startTime,
+          clipScoreData
+        );
+
+        // Construct score data for post-roll (score after the point)
+        const postRollScoreData = {
+          player1: { ...matchData.player1, ...points[pointIndex].scoreState.player1 },
+          player2: { ...matchData.player2, ...points[pointIndex].scoreState.player2 },
+          matchConfig: { ...matchData.matchConfig, inTiebreak: points[pointIndex].scoreState.inTiebreak },
+          pointTime: endTime
+        };
+
+        // Render post-roll clip (endTime to endTime + 5) with score after the point
+        await renderClipWithScoreboard(
+          inputPath,
+          tempPostrollPath,
+          endTime,
+          postRollDuration,
+          postRollScoreData
+        );
+
+        // Create a list file for FFmpeg concatenation
+        const fileList = `file '${tempMainPath}'\nfile '${tempPostrollPath}'`;
+        await fs.writeFile(listFilePath, fileList, 'utf8');
+
+        // Concatenate main clip and post-roll into final output
+        await new Promise<void>((resolve, reject) => {
+          const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+          const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" -c copy "${outputPath}"`;
+          exec(ffmpegCommand, (error) => {
+            if (error) {
+              console.error(`FFmpeg concat error: ${error.message}`);
+              reject(error);
+              return;
+            }
+            resolve();
+          });
         });
-      });
-      
-      // Store clip metadata
+
+        // Clean up temporary files
+        await Promise.all([
+          fs.unlink(tempMainPath),
+          fs.unlink(tempPostrollPath),
+          fs.unlink(listFilePath)
+        ]);
+      } else {
+        // No scoreboard: extract a single clip from startTime to endTime + 5
+        const totalDuration = endTime - startTime + postRollDuration;
+        await new Promise<void>((resolve, reject) => {
+          const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${startTime} -i "${inputPath}" -t ${totalDuration} -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${outputPath}"`;
+          exec(ffmpegCommand, (error) => {
+            if (error) {
+              console.error(`FFmpeg error: ${error.message}`);
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      }
+
+      // Update metadata to reflect the extended end time
+      const actualEndTime = endTime + postRollDuration;
       clipMetadata = {
         id: clipId,
         sourceVideoId: videoId,
         startTime,
-        endTime,
-        label: label || `Clip from ${startTime.toFixed(2)} to ${endTime.toFixed(2)}`,
+        endTime: actualEndTime,
+        label: label || `Clip from ${startTime.toFixed(2)} to ${endTime.toFixed(2)} with 5s post-roll`,
         path: `processed/${outputFilename}`,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        includeScoreboard
       };
     } else {
-      // If FFmpeg is not installed, create mock clip metadata
+      // FFmpeg not installed: create mock clip metadata
       console.warn('FFmpeg not installed. Creating mock clip metadata only.');
-      clipMetadata = await createMockClip(videoId, clipId, startTime, endTime, label || `Clip from ${startTime.toFixed(2)} to ${endTime.toFixed(2)}`);
+      const actualEndTime = endTime + postRollDuration;
+      clipMetadata = await createMockClip(
+        videoId,
+        clipId,
+        startTime,
+        actualEndTime,
+        label || `Clip from ${startTime.toFixed(2)} to ${endTime.toFixed(2)} with 5s post-roll`
+      );
     }
-    
+
     // Save metadata to clips.json
     const clipsMetadataPath = path.join(processedVideosPath, 'clips.json');
     let clipsMetadata: MetadataCollection = {};
-    
+
     try {
       const data = await fs.readFile(clipsMetadataPath, 'utf8');
       clipsMetadata = JSON.parse(data);
     } catch {
-      // If file doesn't exist or is invalid, start with an empty object
+      // File doesn't exist or is invalid: start with an empty object
     }
-    
+
     clipsMetadata[clipId] = clipMetadata;
     await fs.writeFile(clipsMetadataPath, JSON.stringify(clipsMetadata, null, 2));
-    
+
     res.status(200).json({
       message: isFfmpegInstalled ? 'Clip created successfully' : 'Mock clip created (FFmpeg not installed)',
       clip: clipMetadata,
@@ -223,6 +358,10 @@ export const createClip: RequestHandler<any, any> = async (req, res) => {
  */
 export const createClips: RequestHandler<any, any> = async (req, res) => {
   await ensureProcessedDir();
+  
+  // Track all temporary files for cleanup
+  const tempFiles: string[] = [];
+  let listFilePath = '';
   
   try {
     const { videoId, clips, combineClips = false, outputFormat = 'mp4' } = req.body as ClipRequest & { combineClips?: boolean };
@@ -244,7 +383,6 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
     
     const inputPath = path.join(uploadsDir, videoFile);
     const outputClips: ClipMetadata[] = [];
-    const tempFiles: string[] = [];
     
     // Check if FFmpeg is installed
     const isFfmpegInstalled = await checkFfmpegInstalled();
@@ -252,23 +390,45 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
     if (!isFfmpegInstalled) {
       console.warn('FFmpeg not installed. Creating mock clip metadata only.');
       
-      // Create mock clips without actual processing
-      for (const [index, clip] of clips.entries()) {
-        const { startTime, endTime, label } = clip;
+      // Create mock clips metadata without actual processing
+      for (const clip of clips) {
         const clipId = uuidv4();
+        const outputFilename = `${clipId}.${outputFormat}`;
+        const mockClipMetadata: ClipMetadata = {
+          id: clipId,
+          sourceVideoId: videoId,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          label: clip.label || `Clip from ${formatTime(clip.startTime)} to ${formatTime(clip.endTime)}`,
+          path: `uploads/${videoFile}`, // Points to original video
+          createdAt: new Date().toISOString(),
+          includeScoreboard: false
+        };
         
-        const clipMetadata = await createMockClip(
-          videoId,
-          clipId,
-          startTime,
-          endTime,
-          label || `Clip ${index + 1}`
-        );
-        
-        outputClips.push(clipMetadata);
+        outputClips.push(mockClipMetadata);
       }
       
-      // Save metadata
+      // Create a mock combined clip if requested
+      if (combineClips && outputClips.length > 0) {
+        const combinedId = uuidv4();
+        const combinedFilename = `${combinedId}.${outputFormat}`;
+        const combinedMetadata: ClipMetadata = {
+          id: combinedId,
+          sourceVideoId: videoId,
+          startTime: outputClips[0].startTime,
+          endTime: outputClips[outputClips.length - 1].endTime,
+          isCompilation: true,
+          sourceClips: [...outputClips],
+          label: 'Combined Clips',
+          path: `uploads/${videoFile}`, // Points to original video
+          createdAt: new Date().toISOString(),
+          includeScoreboard: false
+        };
+        
+        outputClips.push(combinedMetadata);
+      }
+      
+      // Save clip metadata to clips.json
       const clipsMetadataPath = path.join(processedVideosPath, 'clips.json');
       let clipsMetadata: MetadataCollection = {};
       
@@ -284,7 +444,7 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
         clipsMetadata[clip.id] = clip;
       }
       
-      await fs.writeFile(clipsMetadataPath, JSON.stringify(clipsMetadata, null, 2));
+      await fs.writeFile(clipsMetadataPath, JSON.stringify(clipsMetadata, null, 2), 'utf8');
       
       res.status(200).json({
         message: 'Mock clips created (FFmpeg not installed)',
@@ -324,39 +484,39 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
         });
       });
       
-      // Store clip metadata
       const clipMetadata: ClipMetadata = {
         id: clipId,
         sourceVideoId: videoId,
         startTime,
         endTime,
-        label: label || `Clip ${index + 1}`,
-        path: `processed/${outputFilename}`,
-        createdAt: new Date().toISOString()
+        label: label || `Clip from ${formatTime(startTime)} to ${formatTime(endTime)}`,
+        path: combineClips ? `temp/${tempFilename}` : `processed/${outputFilename}`,
+        createdAt: new Date().toISOString(),
+        includeScoreboard: false
       };
       
       outputClips.push(clipMetadata);
     }
     
-    // If requested, combine all clips into a single video
+    // Combine clips if requested
     if (combineClips && tempFiles.length > 0) {
       const combinedId = uuidv4();
       const combinedFilename = `${combinedId}.${outputFormat}`;
       const combinedPath = path.join(processedVideosPath, combinedFilename);
       
-      // Create a text file listing all temp files for ffmpeg input
-      const listFilePath = path.join(processedVideosPath, `${combinedId}_list.txt`);
+      // Create a list file for FFmpeg's concat demuxer
+      listFilePath = path.join(processedVideosPath, `temp_list_${combinedId}.txt`);
       const fileList = tempFiles.map(file => `file '${file}'`).join('\n');
       await fs.writeFile(listFilePath, fileList, 'utf8');
       
-      // Combine clips
+      // Combine all clips
       await new Promise<void>((resolve, reject) => {
         const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
         const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" -c copy "${combinedPath}"`;
         
         exec(ffmpegCommand, (error) => {
           if (error) {
-            console.error(`FFmpeg error: ${error.message}`);
+            console.error(`FFmpeg concat error: ${error.message}`);
             reject(error);
             return;
           }
@@ -373,9 +533,14 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
         }
       }
       
-      await fs.unlink(listFilePath);
+      // Clean up the list file
+      try {
+        await fs.unlink(listFilePath);
+      } catch (err) {
+        console.error(`Failed to delete list file ${listFilePath}:`, err);
+      }
       
-      // Create metadata for combined clip
+      // Add combined clip to output
       const combinedMetadata: ClipMetadata = {
         id: combinedId,
         sourceVideoId: videoId,
@@ -385,7 +550,8 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
         sourceClips: [...outputClips],
         label: 'Combined Clips',
         path: `processed/${combinedFilename}`,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        includeScoreboard: false
       };
       
       outputClips.push(combinedMetadata);
@@ -406,7 +572,7 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
       clipsMetadata[clip.id] = clip;
     }
     
-    await fs.writeFile(clipsMetadataPath, JSON.stringify(clipsMetadata, null, 2));
+    await fs.writeFile(clipsMetadataPath, JSON.stringify(clipsMetadata, null, 2), 'utf8');
     
     res.status(200).json({
       message: 'Clips created successfully',
@@ -414,7 +580,34 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating clips:', error);
-    res.status(500).json({ error: 'Failed to create clips' });
+    
+    // Clean up all temporary files if an error occurs
+    console.log('Cleaning up temporary files due to clip creation failure...');
+    
+    for (const tempFile of tempFiles) {
+      try {
+        await fs.unlink(tempFile);
+        console.log(`Successfully deleted temporary file: ${tempFile}`);
+      } catch (err) {
+        console.error(`Failed to delete temp file ${tempFile}:`, err);
+      }
+    }
+    
+    // Delete the list file if it exists
+    if (listFilePath) {
+      try {
+        await fs.unlink(listFilePath);
+        console.log(`Successfully deleted list file: ${listFilePath}`);
+      } catch (err) {
+        console.error(`Failed to delete list file ${listFilePath}:`, err);
+      }
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to create clips', 
+      message: error instanceof Error ? error.message : String(error),
+      details: 'All temporary files have been cleaned up.'
+    });
   }
 };
 
@@ -531,14 +724,41 @@ export const deleteClip: RequestHandler = async (req, res) => {
   }
 };
 
+const getVideoDuration = async (videoPath: string): Promise<number> => {
+  const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+  return new Promise((resolve, reject) => {
+    const command = `"${ffmpegPath}" -i "${videoPath}" 2>&1 | grep "Duration"`;
+    exec(command, (error, stdout) => {
+      if (error) {
+        console.error('Error getting video duration:', error);
+        reject(error);
+        return;
+      }
+      const match = stdout.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.\d+/);
+      if (match) {
+        const hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const seconds = parseInt(match[3], 10);
+        resolve(hours * 3600 + minutes * 60 + seconds);
+      } else {
+        reject(new Error('Could not parse video duration'));
+      }
+    });
+  });
+};
+
 /**
  * Exports a match video with selected points and optional scoreboard
  */
 export const exportMatchVideo: RequestHandler = async (req, res) => {
   await ensureProcessedDir();
   
+  // Track all temporary files for cleanup
+  const tempFiles: string[] = [];
+  let listFilePath = '';
+  
   try {
-    const { videoId, points, includeScoreboard = false } = req.body;
+    const { videoId, points, includeScoreboard = false, videoName = '', matchData = null } = req.body;
     
     if (!videoId || !points || !Array.isArray(points) || points.length === 0) {
       res.status(400).json({ error: 'Invalid request parameters' });
@@ -554,6 +774,32 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       res.status(404).json({ error: 'Source video not found' });
       return;
     }
+    
+    // Get video title from metadata if available, otherwise use default
+    let videoTitle = videoName;
+    if (!videoTitle) {
+      // Try to get video name from metadata
+      const metadataPath = path.join(__dirname, '../../uploads', 'metadata.json');
+      try {
+        const rawData = await fs.readFile(metadataPath, 'utf8');
+        const metadata = JSON.parse(rawData);
+        videoTitle = metadata[videoId]?.name || '';
+      } catch (err) {
+        console.error('Error reading metadata.json:', err);
+      }
+    }
+    
+    // Format current date for default label
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit'
+    });
+    
+    const defaultLabel = videoTitle 
+      ? `${videoTitle} - Highlights (${dateStr})` 
+      : `Match Highlights - ${dateStr}`;
     
     const inputPath = path.join(uploadsDir, videoFile);
     const exportId = uuidv4();
@@ -573,7 +819,8 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         points: points.length,
         includeScoreboard,
         path: `uploads/${videoFile}`, // Points to original video
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        label: defaultLabel
       };
       
       // Save to exports.json
@@ -588,23 +835,17 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       }
       
       exportsMetadata[exportId] = exportMetadata;
-      await fs.writeFile(exportsMetadataPath, JSON.stringify(exportsMetadata, null, 2));
+      await fs.writeFile(exportsMetadataPath, JSON.stringify(exportsMetadata, null, 2), 'utf8');
       
-      res.status(200).json({
-        message: 'Mock export created (FFmpeg not installed)',
-        export: exportMetadata,
-        ffmpegInstalled: false
-      });
+      res.status(200).json(exportMetadata);
       return;
     }
     
-    // Create temporary clip files for each point
-    const tempFiles: string[] = [];
-    const listFilePath = path.join(processedVideosPath, `${exportId}_list.txt`);
-    
-    // Filter out any points with invalid timestamps
-    const validPoints = points.filter(
-      point => point.startTime !== null && point.endTime !== null
+    // Filter valid points with startTime and endTime
+    const validPoints = points.filter(point => 
+      typeof point.startTime === 'number' && 
+      typeof point.endTime === 'number' &&
+      point.endTime > point.startTime
     );
     
     if (validPoints.length === 0) {
@@ -612,26 +853,152 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       return;
     }
     
+    // Create list file path for FFmpeg
+    listFilePath = path.join(processedVideosPath, `temp_list_${exportId}.txt`);
+    
     // Create individual clip for each point
     for (const [index, point] of validPoints.entries()) {
       const tempFilename = `temp_point_${index}_${exportId}.mp4`;
       const tempPath = path.join(processedVideosPath, tempFilename);
       tempFiles.push(tempPath);
       
-      // Extract the clip for this point
-      await new Promise<void>((resolve, reject) => {
-        const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-        const ffmpegCommand = `"${ffmpegPath}" -ss ${point.startTime} -i "${inputPath}" -to ${point.endTime - point.startTime} -c copy -avoid_negative_ts 1 "${tempPath}"`;
+      if (includeScoreboard && matchData && point.scoreState) {
+        // Use the consistent helper function to get the previous point's score state
+        const pointScoreData = getPreviousPointScoreState(validPoints, index, matchData);
         
-        exec(ffmpegCommand, (error) => {
-          if (error) {
-            console.error(`FFmpeg error: ${error.message}`);
-            reject(error);
-            return;
-          }
-          resolve();
+        await renderClipWithScoreboard(
+          inputPath,
+          tempPath,
+          point.startTime,
+          point.endTime - point.startTime,
+          pointScoreData
+        );
+      } else {
+        // Extract the clip for this point without scoreboard
+        await new Promise<void>((resolve, reject) => {
+          const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+          // Update FFmpeg command to fix audio sync
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${point.startTime} -i "${inputPath}" -t ${point.endTime - point.startTime} -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${tempPath}"`;
+          
+          exec(ffmpegCommand, (error) => {
+            if (error) {
+              console.error(`FFmpeg error: ${error.message}`);
+              reject(error);
+              return;
+            }
+            resolve();
+          });
         });
-      });
+      }
+    }
+    
+    // Add a post-roll segment showing the final score after the last point
+    if (includeScoreboard && matchData && validPoints.length > 0) {
+      const lastPoint = validPoints[validPoints.length - 1];
+      if (lastPoint.scoreState && lastPoint.winner) {
+        const postRollFilename = `temp_postroll_${exportId}.mp4`;
+        const postRollPath = path.join(processedVideosPath, postRollFilename);
+        
+        // Log the last point data to understand what we're working with
+        console.log('Last point data:', {
+          winner: lastPoint.winner,
+          scoreState: {
+            player1: {
+              currentGame: lastPoint.scoreState.player1.currentGame,
+              currentSet: lastPoint.scoreState.player1.currentSet,
+              isServing: lastPoint.scoreState.player1.isServing
+            },
+            player2: {
+              currentGame: lastPoint.scoreState.player2.currentGame,
+              currentSet: lastPoint.scoreState.player2.currentSet,
+              isServing: lastPoint.scoreState.player2.isServing
+            },
+            inTiebreak: lastPoint.scoreState.inTiebreak
+          }
+        });
+        
+        // For the post-roll score, we need the score AFTER the last point was played
+        // If we have more than one point, we can get it from the next point
+        let finalScoreData;
+        
+        if (validPoints.length > 1) {
+          const lastPointIndex = validPoints.indexOf(lastPoint);
+          const nextPointIndex = (lastPointIndex < validPoints.length - 1) ? lastPointIndex + 1 : -1;
+          
+          if (nextPointIndex >= 0 && validPoints[nextPointIndex].scoreState) {
+            // Use the score state from the next point
+            finalScoreData = {
+              player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...validPoints[nextPointIndex].scoreState.player1 })),
+              player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...validPoints[nextPointIndex].scoreState.player2 })),
+              matchConfig: { ...matchData.matchConfig, inTiebreak: validPoints[nextPointIndex].scoreState.inTiebreak },
+              pointTime: lastPoint.endTime
+            };
+            console.log('Using score state from next point for post-roll');
+          } else {
+            // Use the last point's score state directly, as it already includes the result of that point
+            console.log('Using last point\'s score state for post-roll');
+            finalScoreData = {
+              player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...lastPoint.scoreState.player1 })),
+              player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...lastPoint.scoreState.player2 })),
+              matchConfig: { ...matchData.matchConfig, inTiebreak: lastPoint.scoreState.inTiebreak },
+              pointTime: lastPoint.endTime
+            };
+          }
+        } else {
+          // For a single point, use its scoreState directly (already includes the winner's point)
+          console.log('Single point, using its score state for post-roll');
+          finalScoreData = {
+            player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...lastPoint.scoreState.player1 })),
+            player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...lastPoint.scoreState.player2 })),
+            matchConfig: { ...matchData.matchConfig, inTiebreak: lastPoint.scoreState.inTiebreak },
+            pointTime: lastPoint.endTime
+          };
+        }
+        
+        // Log the final score to verify
+        console.log('Final score for post-roll:', {
+          player1Game: finalScoreData.player1.currentGame,
+          player2Game: finalScoreData.player2.currentGame,
+          player1Set: finalScoreData.player1.currentSet,
+          player2Set: finalScoreData.player2.currentSet
+        });
+        
+        // Simply take 5 seconds of video after the last point ends
+        const postRollDuration = 5; // 5 seconds post-roll
+        
+        // Extract 5 seconds of video after the last point
+        await new Promise<void>((resolve, reject) => {
+          const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${lastPoint.endTime} -i "${inputPath}" -t ${postRollDuration} -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${postRollPath}"`;
+          
+          exec(ffmpegCommand, (error) => {
+            if (error) {
+              console.error(`FFmpeg post-roll extraction error: ${error.message}`);
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+        
+        // Add the final scoreboard to the post-roll segment
+        const postRollWithScoreboardPath = path.join(processedVideosPath, `temp_postroll_scoreboard_${exportId}.mp4`);
+        await renderClipWithScoreboard(
+          postRollPath,
+          postRollWithScoreboardPath,
+          0, // From the start of the post-roll
+          postRollDuration,
+          finalScoreData
+        );
+        
+        // Add the post-roll to the list of clips
+        tempFiles.push(postRollWithScoreboardPath);
+        
+        // Clean up the intermediate file
+        await fs.unlink(postRollPath).catch(err => {
+          console.error(`Failed to delete intermediate post-roll file: ${err}`);
+        });
+      }
     }
     
     // Create a text file listing all temp files for FFmpeg input
@@ -641,7 +1008,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
     // Combine clips
     await new Promise<void>((resolve, reject) => {
       const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-      const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" -c copy "${outputPath}"`;
+      const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${outputPath}"`;
       
       exec(ffmpegCommand, (error) => {
         if (error) {
@@ -653,7 +1020,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       });
     });
     
-    // Clean up temp files
+    // Clean up temporary files
     for (const tempFile of tempFiles) {
       try {
         await fs.unlink(tempFile);
@@ -661,8 +1028,16 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         console.error(`Failed to delete temp file ${tempFile}:`, err);
       }
     }
-    await fs.unlink(listFilePath);
     
+    // Delete the list file if it exists
+    if (listFilePath) {
+      try {
+        await fs.unlink(listFilePath);
+      } catch (err) {
+        console.error(`Failed to delete list file ${listFilePath}:`, err);
+      }
+    }
+
     // Store export metadata
     const exportMetadata: ExportMetadata = {
       id: exportId,
@@ -670,7 +1045,8 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       points: validPoints.length,
       includeScoreboard,
       path: `processed/${outputFilename}`,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      label: defaultLabel
     };
     
     // Save metadata to exports.json
@@ -693,8 +1069,36 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       ffmpegInstalled: true
     });
   } catch (error) {
-    console.error('Error exporting match video:', error);
-    res.status(500).json({ error: 'Failed to export match video' });
+    console.error('Error in exportMatchVideo:', error);
+    
+    // Clean up all temporary files if an error occurs
+    console.log('Cleaning up temporary files due to export failure...');
+    
+    for (const tempFile of tempFiles) {
+      try {
+        await fs.unlink(tempFile);
+        console.log(`Successfully deleted temporary file: ${tempFile}`);
+      } catch (err) {
+        console.error(`Failed to delete temp file ${tempFile}:`, err);
+      }
+    }
+    
+    // Delete the list file if it exists
+    if (listFilePath) {
+      try {
+        await fs.unlink(listFilePath);
+        console.log(`Successfully deleted list file: ${listFilePath}`);
+      } catch (err) {
+        console.error(`Failed to delete list file ${listFilePath}:`, err);
+      }
+    }
+    
+    // Return error to client
+    res.status(500).json({ 
+      error: 'Failed to export video', 
+      message: error instanceof Error ? error.message : String(error),
+      details: 'All temporary files have been cleaned up.'
+    });
   }
 };
 

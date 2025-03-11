@@ -526,7 +526,6 @@ const SavedClipsAndExports = ({ videoId, refreshTrigger = 0 }: SavedClipsAndExpo
                               <span className="mx-2">•</span>
                               <span>{exportItem.points} point{exportItem.points !== 1 ? 's' : ''}</span>
                             </div>
-                            <div>Scoreboard: {exportItem.includeScoreboard ? 'Included' : 'Not included'}</div>
                           </div>
                           <div className="flex space-x-3">
                             <a 
