@@ -64,6 +64,7 @@
    - Automatic server selection based on saved points
    - Immediate match reconfiguration after reset without page refresh
    - Human-friendly last saved timestamp with date and time
+   - Proper divider recalculation after point deletion
 
 6. **Video Processing**
    - FFmpeg detection and status reporting
@@ -93,18 +94,16 @@
    - Intelligent post-roll score determination prioritizing actual point data
    - Automatic cleanup of temporary files during failed export attempts
    - Robust error handling with detailed logs and user feedback
+   - Improved export status visualization
+   - Fixed export progress tracking API for more reliable progress updates
+   - Improved tab switching logic during exports
+   - Correct display of final tiebreak scores in exported videos
+   - Fixed score display when a tiebreak match is completed
+   - Improved tab disabling during exports with clear user feedback via tooltips
 
 ## In Progress
 1. **Video Processing**
    - Performance optimizations for video processing
-
-2. **UI/UX Enhancements**
-   - Improving text contrast and visibility
-   - Optimizing component layouts for better user experience
-   - Redesigned VideoEdit page with improved clip/export management
-   - Card-based grid layout for saved clips and exports
-   - Tabbed interface for efficient navigation between clips and exports
-   - Height constraints to prevent excessive scrolling
 
 ## Next Steps
 1. **Score Tracking Enhancement**

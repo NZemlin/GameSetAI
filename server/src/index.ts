@@ -12,10 +12,6 @@ import matchRoutes from './routes/matchRoutes';
 const result = config({ path: path.resolve(__dirname, '../../.env') });
 if (result.error) {
   console.error('Error loading .env file:', result.error);
-} else {
-  console.log('Loaded .env file successfully');
-  console.log('Parsed SUPABASE_URL:', process.env.SUPABASE_URL);
-  console.log('Parsed SUPABASE_ANON_KEY (partial):', process.env.SUPABASE_ANON_KEY?.slice(0, 10) + '...');
 }
 
 // Initialize Supabase clients
@@ -27,16 +23,8 @@ if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
   throw new Error('SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY must be defined in environment variables');
 }
 
-console.log('Supabase URL:', supabaseUrl);
-console.log('Supabase Anon Key (partial):', supabaseAnonKey.slice(0, 10) + '...');
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-// Log diagnostics
-console.log('FFMPEG_PATH from .env:', process.env.FFMPEG_PATH);
-console.log('Current working directory:', process.cwd());
-console.log('__dirname:', __dirname);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -52,23 +40,6 @@ app.use(express.json());
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/processed', express.static(path.join(__dirname, '../processed')));
-
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
-
-const logRoutes = (router: any, label: string) => {
-  const routes = router.stack
-    .filter((layer: any) => layer.route)
-    .map((layer: any) => `${layer.route.path} (${Object.keys(layer.route.methods).join(', ')})`);
-  console.log(`${label}:`, routes);
-};
-
-logRoutes(videoRoutes, 'Loading video routes from');
-logRoutes(videoProcessingRoutes, 'Loading video processing routes from');
-logRoutes(authRoutes, 'Loading auth routes from');
-logRoutes(matchRoutes, 'Loading match routes from');
 
 app.use('/api/auth', authRoutes);
 app.use('/api', videoRoutes);

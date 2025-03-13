@@ -402,20 +402,60 @@ export const calculateServer = (
   player2: Player, 
   tiebreakWon: boolean
 ): 1 | 2 => {
-  const secondServer = matchConfig.firstServer! === 1 ? 2 : 1;
+  // Server calculation based on tennis rules
+  let result: 1 | 2;
+  
+  // Determine second server based on firstServer
+  const secondServer = matchConfig.firstServer === 1 ? 2 : 1;
+  
+  // Calculate total points for tiebreak server calculation
   const totalPoints = player1.currentGame + player2.currentGame;
+  
+  // For tiebreak-only mode
   if (matchConfig.type === 'tiebreak') {
-    return totalPoints % 4 === 0 || totalPoints % 4 === 3 ? matchConfig.firstServer! : secondServer;
-  } else {
-    const totalGames = getTotalGamesWon(player1) + getTotalGamesWon(player2);
-    if (matchConfig.inTiebreak && !tiebreakWon) {
-      const tiebreakFirstServer = (totalGames % 2 === 0 ? matchConfig.firstServer! : secondServer)!
-      const tiebreakSecondServer = tiebreakFirstServer === 1 ? 2 : 1;
-      return totalPoints % 4 === 0 || totalPoints % 4 === 3 ? tiebreakFirstServer! : tiebreakSecondServer;
-    } else {
-      return (totalGames + (tiebreakWon ? 1 : 0)) % 2 === 0 ? matchConfig.firstServer! : secondServer;
-    }
+    result = shouldChangeServer(totalPoints) 
+      ? (player1.isServing ? 2 : 1) 
+      : (player1.isServing ? 1 : 2);
+    return result;
   }
+  
+  // Calculate total games
+  const totalGames = getTotalGamesWon(player1) + getTotalGamesWon(player2);
+  
+  // Special handling for completed tiebreak
+  if (tiebreakWon) {
+    // After a tiebreak is completed, the player who received first in the tiebreak serves first in the next set
+    // We need to determine who served first in the tiebreak
+    
+    // Get the last set
+    const lastSetIndex = player1.completedSets.length - 1;
+    if (lastSetIndex < 0) return matchConfig.firstServer || 1; // Fallback if no completed sets
+    
+    // Calculate total games in the last set (both players combined)
+    const lastSetGames = player1.completedSets[lastSetIndex].score + player2.completedSets[lastSetIndex].score;
+    
+    // The server at the start of the tiebreak is determined by who would have served in the next game
+    // This is the player who did NOT serve in the 12th game (when score was 6-6)
+    // In a normal set with 12 games, this would be the player who served in odd-numbered games
+    const tiebreakFirstServer = (lastSetGames % 2 === 0) ? secondServer : matchConfig.firstServer;
+
+    // After the tiebreak, the first server of the next set is the player who received first in the tiebreak
+    // This is the player who did NOT serve first in the tiebreak
+    result = tiebreakFirstServer === 1 ? 2 : 1;
+    return result;
+  }
+  
+  // For ongoing tiebreak
+  if (matchConfig.inTiebreak) {
+    result = shouldChangeServer(totalPoints) 
+      ? (player1.isServing ? 2 : 1) 
+      : (player1.isServing ? 1 : 2);
+    return result;
+  }
+  
+  // For regular games
+  result = (totalGames % 2 === 0) ? matchConfig.firstServer! : secondServer;
+  return result;
 };
 
 export const shouldChangeServer = (totalPoints: number): boolean => {
@@ -436,16 +476,17 @@ export const getDisplayName = (player: Player, defaultName: string): string => {
 };
 
 export const getTotalGamesWon = (player: Player): number => {
-  // Sum games from completed sets
+  // Sum games from completed sets only
   const completedSetsGames = player.completedSets.reduce((total, set) => {
     // For each completed set, add the games won (stored in score)
     return total + set.score;
   }, 0);
 
-  // Add games from current set
-  const totalGames = completedSetsGames + player.currentSet;
-
-  return totalGames;
+  // We don't add games from current set since we're only interested in
+  // completed games for determining server order
+  // const totalGames = completedSetsGames + player.currentSet;
+  
+  return completedSetsGames;
 };
 
 export const isTiebreakWon = (

@@ -37,12 +37,19 @@ const VideoEdit = () => {
   const [isSavingPoints, setIsSavingPoints] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   // Track if points were loaded from the server
   const pointsLoadedRef = useRef(false);
   
   // Track auto-save timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Track if saving is currently in progress
+  const isSavingRef = useRef<boolean>(false);
+  
+  // Store previous points length to detect when a new point is added
+  const prevPointsLengthRef = useRef<number>(0);
   
   const [matchConfig, setMatchConfig] = useState<PersistedMatchConfig>({
     type: 'match',
@@ -75,19 +82,16 @@ const VideoEdit = () => {
         setPoints(response.data.points);
         setLastSaved(response.data.lastUpdated);
         pointsLoadedRef.current = true;
-        console.log(`Loaded ${response.data.points.length} points for video ${videoId}`);
       }
       
       // Load match configuration if available
-      if (response.data && response.data.matchConfig) {
+      if (response.data && response.data.matchConfig && response.data.matchConfig.isConfigured) {
         setMatchConfig(response.data.matchConfig);
-        console.log('Loaded match configuration from server');
       }
       
       // Load player names if available
       if (response.data && response.data.playerNames) {
         setPlayerNames(response.data.playerNames);
-        console.log('Loaded player names from server');
       }
     } catch (err) {
       console.error('Error loading points:', err);
@@ -99,8 +103,9 @@ const VideoEdit = () => {
 
   // Function to save points and match data for a video
   const saveVideoPoints = useCallback(async (videoId: string, pointsToSave: Point[]) => {
-    if (!videoId) return;
+    if (!videoId || isSavingRef.current) return;
     
+    isSavingRef.current = true;
     setIsSavingPoints(true);
     try {
       const response = await axios.post(`http://localhost:3000/api/match/videos/${videoId}/match`, {
@@ -109,17 +114,12 @@ const VideoEdit = () => {
         playerNames
       });
       setLastSaved(response.data.lastUpdated);
-      
-      if (pointsToSave.length === 0) {
-        console.log(`Saved match configuration and player names for video ${videoId}`);
-      } else {
-        console.log(`Saved ${pointsToSave.length} points, match configuration, and player names for video ${videoId}`);
-      }
     } catch (err) {
       console.error('Error saving data:', err);
       // Display error in the UI rather than using toast
     } finally {
       setIsSavingPoints(false);
+      isSavingRef.current = false;
     }
   }, [matchConfig, playerNames]);
 
@@ -160,24 +160,39 @@ const VideoEdit = () => {
       // Force Scoreboard remount after reset
       setRefreshClips(prev => prev + 1);
       
-      console.log('Successfully reset match data');
+      // Switch to scoring tab to show match configuration
+      setActiveTab('score');
     } catch (err) {
       console.error('Error resetting scoring data:', err);
     } finally {
       setIsResetting(false);
     }
-  }, [id]);
+  }, [id, setActiveTab]);
 
-  // Enhanced points change handler with auto-save
+  // Enhanced points change handler with immediate save for new points
   const handlePointsChange = useCallback((newPoints: Point[]) => {
+    const isNewPointAdded = newPoints.length > prevPointsLengthRef.current;
+    prevPointsLengthRef.current = newPoints.length;
+    
     setPoints(prev => {
       // Avoid update if points haven't changed (deep comparison)
       if (JSON.stringify(prev) === JSON.stringify(newPoints)) {
         return prev;
       }
       
-      // Schedule auto-save
-      if (id) {
+      // Save immediately if a new point was added (higher priority)
+      if (id && isNewPointAdded) {
+        // Clear any existing timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
+        
+        // Save immediately for new points
+        saveVideoPoints(id, newPoints);
+      } 
+      // Use debounced save for edits to existing points
+      else if (id) {
         // Clear any existing timeout
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
@@ -256,6 +271,15 @@ const VideoEdit = () => {
     setRefreshClips(prev => prev + 1);
   };
 
+  // Handler for export status changes
+  const handleExportStatusChange = (exporting: boolean) => {
+    setIsExporting(exporting);
+    // If export started and we're in score tab, switch to clips tab
+    if (exporting && activeTab === 'score') {
+      setActiveTab('clips');
+    }
+  };
+
   // Load the video
   useEffect(() => {
     const fetchVideo = async () => {
@@ -280,17 +304,95 @@ const VideoEdit = () => {
     }
   }, [id, loadVideoPoints]);
   
-  // Save data when component unmounts if there are pending changes
+  // Handle beforeunload event to save data before leaving the page
   useEffect(() => {
-    return () => {
-      // If there's a pending timeout, clear it and save immediately
-      if (saveTimeoutRef.current && id) {
+    // Function to save on page leave
+    const saveBeforeUnload = () => {
+      if (id && points.length > 0 && saveTimeoutRef.current) {
+        // Clear the timeout
         clearTimeout(saveTimeoutRef.current);
-        saveVideoPoints(id, points);
-        console.log('Saving data on component unmount');
+        saveTimeoutRef.current = null;
+        
+        // Use sync localStorage as a fallback in case the async request doesn't complete
+        try {
+          localStorage.setItem('emergency_points_backup', JSON.stringify({
+            videoId: id,
+            points,
+            matchConfig,
+            playerNames,
+            timestamp: new Date().toISOString()
+          }));
+        } catch (err) {
+          console.error('Failed to create emergency backup:', err);
+        }
+        
+        // Try to save synchronously before page unload
+        navigator.sendBeacon(
+          `http://localhost:3000/api/match/videos/${id}/match`, 
+          JSON.stringify({
+            points,
+            matchConfig,
+            playerNames
+          })
+        );
       }
     };
-  }, [id, points, saveVideoPoints]);
+    
+    // Register the event handlers
+    window.addEventListener('beforeunload', saveBeforeUnload);
+    
+    // Check for emergency backup on load
+    const checkEmergencyBackup = () => {
+      try {
+        const backup = localStorage.getItem('emergency_points_backup');
+        if (backup) {
+          const data = JSON.parse(backup);
+          // Only restore if it's for this video and not too old (< 1 hour)
+          if (data.videoId === id && 
+              new Date().getTime() - new Date(data.timestamp).getTime() < 3600000) {
+            // Only restore if we haven't yet loaded points from the server
+            if (!pointsLoadedRef.current) {
+              setPoints(data.points);
+              setMatchConfig(data.matchConfig);
+              setPlayerNames(data.playerNames);
+              // Then try to save this to the server
+              if (id) {
+                saveVideoPoints(id, data.points);
+              }
+            }
+          }
+          // Clear the backup
+          localStorage.removeItem('emergency_points_backup');
+        }
+      } catch (err) {
+        console.error('Failed to process emergency backup:', err);
+        localStorage.removeItem('emergency_points_backup');
+      }
+    };
+    
+    // Add load event listener for emergency backup recovery
+    if (id) {
+      window.addEventListener('load', checkEmergencyBackup);
+      checkEmergencyBackup(); // Also check on component mount
+    }
+    
+    // Clean up the event listeners
+    return () => {
+      window.removeEventListener('beforeunload', saveBeforeUnload);
+      window.removeEventListener('load', checkEmergencyBackup);
+      
+      // Also save on component unmount if there's a pending save
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+        
+        // Only save if we have a videoId and aren't already saving
+        if (id && !isSavingRef.current) {
+          saveVideoPoints(id, points);
+        }
+      }
+    };
+  }, [id, points, matchConfig, playerNames, saveVideoPoints]);
 
   const handleNameChange = async (newName: string) => {
     if (!video) return;
@@ -299,8 +401,8 @@ const VideoEdit = () => {
         name: newName || 'Untitled Video'
       });
       setVideo(prev => prev ? { ...prev, name: response.data.video.name } : null);
-    } catch (err) {
-      console.error('Error updating video name:', err);
+    } catch {
+      // Error is non-critical, silently fail
     }
   };
 
@@ -324,8 +426,7 @@ const VideoEdit = () => {
         await saveVideoPoints(id, points);
         // Navigate after save completes
         navigate('/videos');
-      } catch (err) {
-        console.error('Error saving before navigation:', err);
+      } catch {
         // Navigate anyway even if save fails
         navigate('/videos');
       }
@@ -433,11 +534,14 @@ const VideoEdit = () => {
                 <div className="mb-4 border-b">
                   <nav className="flex space-x-2 mb-4">
                     <button
-                      onClick={() => setActiveTab('score')}
+                      onClick={() => !isExporting && setActiveTab('score')}
+                      disabled={isExporting}
                       className={`px-4 py-2 border text-sm font-medium rounded-md ${
                         activeTab === 'score'
                           ? 'text-indigo-600 bg-white border-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                          : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
+                          : isExporting 
+                            ? 'text-gray-400 border-gray-300 bg-gray-100 cursor-not-allowed'
+                            : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
                       }`}
                     >
                       Scoring
@@ -502,6 +606,7 @@ const VideoEdit = () => {
                           ...matchConfig,
                           inTiebreak: false
                         }}
+                        onExportStatusChange={handleExportStatusChange}
                       />
                     </div>
                   )}

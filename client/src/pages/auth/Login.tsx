@@ -20,9 +20,7 @@ const Login = () => {
         password,
       });
   
-      console.log('Login response in Login:', response.data);
       const token = response.data.token;
-      console.log('Storing token in localStorage:', token);
       localStorage.setItem('token', token);
   
       // Always redirect to /dashboard after successful login

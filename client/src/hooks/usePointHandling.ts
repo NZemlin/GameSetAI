@@ -68,6 +68,7 @@ export const usePointHandling = (
         ...prev,
         inTiebreak: false,
       }));
+      
       updateServerAfterTiebreak(matchConfig, player1, player2, true);
     } else {
       // For tiebreak-only mode, record just the tiebreak score

@@ -12,20 +12,13 @@ import {
   renameClip,
   renameExport,
   downloadClip,
-  downloadExport
+  downloadExport,
+  getExportProgress
 } from '../controllers/videoProcessingController';
 import path from 'path';
 import fs from 'fs/promises'; // For reading metadata files
 
-console.log('Loading videoProcessingRoutes.ts');
-
 const router = express.Router();
-
-// Middleware for logging requests (for debugging)
-router.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
 
 // Check if FFmpeg is installed
 // GET /api/processing/ffmpeg-status
@@ -67,6 +60,9 @@ router.get('/download/clip/:id', downloadClip);
 
 // New route: Download a specific export by ID
 router.get('/download/export/:id', downloadExport);
+
+// New route: Get export progress
+router.get('/export-progress/:exportId', getExportProgress);
 
 // Handle 404 errors for undefined routes within /api/processing
 router.use((req: Request, res: Response) => {

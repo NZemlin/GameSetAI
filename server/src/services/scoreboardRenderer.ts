@@ -33,12 +33,24 @@ interface ScoreData {
  */
 const generateScoreboardHTML = (scoreData: ScoreData): string => {
   const { player1, player2, matchConfig } = scoreData;
+  
+  // For tiebreak mode, determine if we should show the last completed set
+  const showCompletedTiebreak = matchConfig.type === 'tiebreak' && 
+                               player1.completedSets.length > 0 && 
+                               player2.completedSets.length > 0 && 
+                               (player1.currentGame === 0 && player2.currentGame === 0);
+                               
+  // Get the last completed set scores for tiebreak mode
+  const lastSetIndex = player1.completedSets.length - 1;
+  const lastTiebreakScore1 = showCompletedTiebreak && lastSetIndex >= 0 ? player1.completedSets[lastSetIndex].score : null;
+  const lastTiebreakScore2 = showCompletedTiebreak && lastSetIndex >= 0 ? player2.completedSets[lastSetIndex].score : null;
+  
   const formatGameScore = (playerScore: number, otherPlayerScore: number): string => {
     switch (playerScore) {
       case 0: return '0';
       case 1: return '15';
       case 2: return '30';
-      case 3: return otherPlayerScore === 3 ? '40' : otherPlayerScore === 4 ? '40' : 'AD';
+      case 3: return '40';
       case 4: return 'AD';
       default: return playerScore.toString();
     }
@@ -88,7 +100,7 @@ const generateScoreboardHTML = (scoreData: ScoreData): string => {
       <td>${player1.currentSet}</td>
       <td>${matchConfig.inTiebreak ? player1.currentGame : formatGameScore(player1.currentGame, player2.currentGame)}</td>`;
   } else if (matchConfig.type === 'tiebreak') {
-    html += `<td>${player1.currentGame}</td>`;
+    html += `<td>${showCompletedTiebreak ? lastTiebreakScore1 : player1.currentGame}</td>`;
   }
 
   html += `</tr><tr><td class="player">${player2.name || 'Player 2'}${player2.isServing ? '<span class="serving"></span>' : ''}</td>`;
@@ -104,7 +116,7 @@ const generateScoreboardHTML = (scoreData: ScoreData): string => {
       <td>${player2.currentSet}</td>
       <td>${matchConfig.inTiebreak ? player2.currentGame : formatGameScore(player2.currentGame, player1.currentGame)}</td>`;
   } else if (matchConfig.type === 'tiebreak') {
-    html += `<td>${player2.currentGame}</td>`;
+    html += `<td>${showCompletedTiebreak ? lastTiebreakScore2 : player2.currentGame}</td>`;
   }
 
   html += `</tr></tbody></table></div></body></html>`;

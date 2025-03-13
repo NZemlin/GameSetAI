@@ -36,6 +36,7 @@ interface ClipManagerProps {
   player1?: Player;
   player2?: Player;
   matchConfig?: MatchConfig;
+  onExportStatusChange?: (isExporting: boolean) => void;
 }
 
 interface ClipMetadata {
@@ -66,7 +67,8 @@ const ClipManager = ({
   videoName,
   player1,
   player2,
-  matchConfig 
+  matchConfig,
+  onExportStatusChange
 }: ClipManagerProps) => {
   const [clips, setClips] = useState<ClipMetadata[]>([]);
   const [exports, setExports] = useState<ExportMetadata[]>([]);
@@ -77,9 +79,27 @@ const ClipManager = ({
   const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
   const [includeScoreboard, setIncludeScoreboard] = useState<boolean>(false);
   const [ffmpegInstalled, setFffmpegInstalled] = useState<boolean | null>(null);
+  const [exportProgress, setExportProgress] = useState<{active: boolean, total: number, current: number} | null>(null);
 
   // Get the JWT token from localStorage
   const token = localStorage.getItem('token');
+
+  // Check for any in-progress exports when component mounts
+  useEffect(() => {
+    const storedExportStatus = localStorage.getItem(`export_status_${videoId}`);
+    if (storedExportStatus) {
+      try {
+        const status = JSON.parse(storedExportStatus);
+        if (status.active) {
+          setExportLoading(true);
+          setExportProgress(status);
+        }
+      } catch (err) {
+        console.error('Error parsing stored export status:', err);
+        localStorage.removeItem(`export_status_${videoId}`);
+      }
+    }
+  }, [videoId]);
 
   // Fetch clips and exports associated with this video
   useEffect(() => {
@@ -132,6 +152,13 @@ const ClipManager = ({
 
     checkFfmpegStatus();
   }, [token]);
+
+  // Notify the parent component when export status changes
+  useEffect(() => {
+    if (onExportStatusChange) {
+      onExportStatusChange(exportLoading);
+    }
+  }, [exportLoading, onExportStatusChange]);
 
   // Function to create a clip
   const createClip = async (startTime: number, endTime: number, label?: string, pointIndex?: number) => {
@@ -264,12 +291,23 @@ const ClipManager = ({
     setExportLoading(true);
     setError(null);
     setSuccess(null);
+    
+    const pointsToExport = selectedPoints.map(index => points[index]).filter(
+      point => point.startTime !== null && point.endTime !== null
+    );
+    
+    // Set initial export progress
+    const initialProgress = {
+      active: true,
+      total: pointsToExport.length,
+      current: 0
+    };
+    setExportProgress(initialProgress);
+    
+    // Store the export status in localStorage
+    localStorage.setItem(`export_status_${videoId}`, JSON.stringify(initialProgress));
 
     try {
-      const pointsToExport = selectedPoints.map(index => points[index]).filter(
-        point => point.startTime !== null && point.endTime !== null
-      );
-
       // Prepare match data if scoreboard is to be included
       let matchData = null;
       if (includeScoreboard && player1 && player2 && matchConfig) {
@@ -291,15 +329,114 @@ const ClipManager = ({
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      setSuccess(response.data.message || 'Match video exported successfully');
-      setExports(prevExports => [...prevExports, response.data.export]);
+      // Extract the exportId from the response
+      const exportId = response.data.exportId;
       
+      if (!exportId) {
+        throw new Error('Export failed - no export ID returned');
+      }
+      
+      // Start polling for progress updates with simplified retry mechanism
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+      
+      // Function to poll for export progress
+      const pollExportProgress = async () => {
+        try {
+          const progressResponse = await axios.get(`http://localhost:3000/api/processing/export-progress/${exportId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          const { progress } = progressResponse.data;
+          
+          if (progress) {
+            // Update the progress state
+            setExportProgress({
+              active: progress.active,
+              total: progress.total,
+              current: progress.current
+            });
+            
+            // Update localStorage
+            localStorage.setItem(`export_status_${videoId}`, JSON.stringify({
+              active: progress.active,
+              total: progress.total,
+              current: progress.current
+            }));
+            
+            // Reset retry counter on successful response
+            retryCount = 0;
+            
+            // If the export is complete, stop polling and update the UI
+            if (progress.completed) {
+              clearInterval(progressInterval);
+              
+              // Fetch the final export data
+              const exportsResponse = await axios.get('http://localhost:3000/api/processing/exports', {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              
+              const newExport = exportsResponse.data.exports.find(
+                (exp: ExportMetadata) => exp.id === exportId
+              );
+              
+              if (newExport) {
+                setExports(prevExports => [...prevExports, newExport]);
+                setSuccess('Match video exported successfully');
+              }
+              
+              // Clear the export status
+              localStorage.removeItem(`export_status_${videoId}`);
+              setExportProgress(null);
+              setExportLoading(false);
+              
+              // Notify parent component that an export has been completed
+              if (onClipCreated) {
+                onClipCreated();
+              }
+
+              // Notify parent component about export status change
+              if (onExportStatusChange) {
+                onExportStatusChange(false);
+              }
+            }
+          } else {
+            console.warn('Received empty progress data');
+            handlePollingError();
+          }
+        } catch (err) {
+          console.error('Error checking export progress:', err);
+          handlePollingError();
+        }
+      };
+      
+      // Start the polling interval
+      const progressInterval = setInterval(pollExportProgress, 1000); // Poll every second
+      
+      // Helper function to handle polling errors with retry logic
+      function handlePollingError() {
+        retryCount++;
+        
+        // Check if we need to give up due to too many retries
+        if (retryCount > MAX_RETRIES) {
+          console.warn(`Max retries (${MAX_RETRIES}) reached for progress polling. Stopping.`);
+          clearInterval(progressInterval);
+          
+          // Don't reset the UI yet as the export might still be processing
+          // Instead, show a warning to the user
+          setError('Lost connection to the export process. The export may still be processing.');
+        }
+      }
+      
+      // If FFmpeg is not installed, handle that case
       if (response.data.ffmpegInstalled !== undefined) {
         setFffmpegInstalled(response.data.ffmpegInstalled);
       }
       
-      if (!response.data.ffmpegInstalled) {
+      if (response.data.ffmpegInstalled === false) {
         setSuccess('Export metadata created, but FFmpeg is not installed. Only original video will be referenced.');
+        clearInterval(progressInterval);
+        setExportLoading(false);
       }
       
       // Notify parent component that clips/exports have been created
@@ -309,10 +446,23 @@ const ClipManager = ({
     } catch (err) {
       console.error('Error exporting points:', err);
       setError('Failed to export points');
-    } finally {
+      
+      // Clear the export status
+      localStorage.removeItem(`export_status_${videoId}`);
+      setExportProgress(null);
       setExportLoading(false);
     }
   };
+
+  // Add a cleanup function to clear intervals when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clear any localStorage data when unmounting to prevent stale data
+      if (videoId) {
+        localStorage.removeItem(`export_status_${videoId}`);
+      }
+    };
+  }, [videoId]);
 
   // Function to delete a clip
   const deleteClip = async (clipId: string) => {
@@ -382,9 +532,17 @@ const ClipManager = ({
                 exportLoading || selectedPoints.length === 0
                   ? 'bg-indigo-300 cursor-not-allowed text-white'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-              } px-5 py-1.5 rounded font-medium text-sm mr-3`}
+              } px-5 py-1.5 rounded font-medium text-sm mr-3 flex items-center`}
             >
-              {exportLoading ? 'Exporting...' : 'Export'}
+              {exportLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Exporting...
+                </>
+              ) : 'Export'}
             </button>
             
             <button
@@ -399,6 +557,26 @@ const ClipManager = ({
             </span>
           </div>
           
+          {/* Export progress indicator */}
+          {exportProgress && exportProgress.active && (
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Exporting video...</span>
+                <span>
+                  {exportProgress.current >= exportProgress.total 
+                    ? "Finishing export..." 
+                    : `${exportProgress.current} of ${exportProgress.total} points processed`}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div 
+                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
+                  style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+
           {/* Scoreboard option row */}
           <div className="flex items-center mb-4">
             <div className="flex items-center">
@@ -411,7 +589,7 @@ const ClipManager = ({
                 disabled={!player1 || !player2 || !matchConfig}
               />
               <label htmlFor="includeScoreboard" className="text-sm text-gray-800">
-                Include scoreboard {ffmpegInstalled === false ? '(requires FFmpeg)' : '(coming soon)'}
+                Include scoreboard {ffmpegInstalled === false ? '(requires FFmpeg)' : ''}
               </label>
             </div>
             {includeScoreboard && (!player1 || !player2 || !matchConfig) && (

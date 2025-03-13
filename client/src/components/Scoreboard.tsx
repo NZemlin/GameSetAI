@@ -537,15 +537,33 @@ const Scoreboard = ({
       matchConfig: initialMatchConfig
     };
 
-    const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig } = 
+    const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig, allStates = [] } = 
       calculateScoreState(newPoints, initialState);
+
+    // Update each point's scoreState and divider based on the recalculated states
+    const updatedPoints = newPoints.map((point, index) => {
+      const state = allStates[index];
+      
+      // Determine if this point should have a divider
+      const divider: Point['divider'] = calculateDivider(state);
+
+      return {
+        ...point,
+        scoreState: {
+          player1: state.player1,
+          player2: state.player2,
+          inTiebreak: state.matchConfig.inTiebreak
+        },
+        divider
+      } as Point;
+    });
 
     setPlayer1(newPlayer1);
     setPlayer2(newPlayer2);
     setMatchConfig(newMatchConfig);
     setChronologicalPoints(prev => ({
       ...prev,
-      points: newPoints
+      points: updatedPoints
     }));
     setEditingPointIndex(null);
   };
@@ -581,15 +599,33 @@ const Scoreboard = ({
       matchConfig: initialMatchConfig
     };
 
-    const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig } = 
+    const { player1: newPlayer1, player2: newPlayer2, matchConfig: newMatchConfig, allStates = [] } = 
       calculateScoreState(newPoints, initialState);
+
+    // Update each point's scoreState and divider based on the recalculated states
+    const updatedPoints = newPoints.map((point, index) => {
+      const state = allStates[index];
+      
+      // Determine if this point should have a divider
+      const divider: Point['divider'] = calculateDivider(state);
+
+      return {
+        ...point,
+        scoreState: {
+          player1: state.player1,
+          player2: state.player2,
+          inTiebreak: state.matchConfig.inTiebreak
+        },
+        divider
+      } as Point;
+    });
 
     setPlayer1(newPlayer1);
     setPlayer2(newPlayer2);
     setMatchConfig(newMatchConfig);
     setChronologicalPoints(prev => ({
       ...prev,
-      points: newPoints
+      points: updatedPoints
     }));
     setEditingPointIndex(null);
   };

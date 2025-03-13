@@ -8,10 +8,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, username } = req.body;
 
-    console.log('Signup attempt with:', { email, username }); // Log the request payload
-
     if (!email || !password) {
-      console.log('Missing email or password');
       res.status(400).json({ error: 'Email and password are required' });
       return;
     }
@@ -25,18 +22,17 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     });
 
     if (error) {
-      console.error('Supabase signup error:', error); // Log the full error object
+      console.error('Supabase signup error:', error); // Keep important error logs
       res.status(400).json({ error: error.message });
       return;
     }
 
-    console.log('Signup successful:', data);
     res.status(201).json({
       message: 'User created successfully',
       user: data.user,
     });
   } catch (error: any) {
-    console.error('Unexpected error during signup:', error); // Log unexpected errors
+    console.error('Unexpected error during signup:', error); // Keep important error logs
     res.status(500).json({
       error: error.message || 'Error creating user',
     });
@@ -47,9 +43,6 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
-
-    console.log('Login attempt with email:', email);
-    console.log('JWT_SECRET used for signing:', process.env.JWT_SECRET || 'your-secret-key');
 
     if (!email || !password) {
       res.status(400).json({ error: 'Email and password are required' });
@@ -72,8 +65,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
-
-    console.log('Generated token:', token);
 
     res.status(200).json({
       message: 'Login successful',
@@ -195,12 +186,7 @@ export const validateToken = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    console.log('Validating token:', token);
-    console.log('JWT_SECRET used for verification:', process.env.JWT_SECRET || 'your-secret-key');
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string };
-    console.log('Token decoded successfully:', decoded);
-
     res.status(200).json({ message: 'Token is valid', userId: decoded.userId });
   } catch (error: any) {
     console.error('Token validation error:', error.message);
@@ -222,7 +208,6 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
 
     // Verify the JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string };
-    console.log('Decoded token:', decoded);
 
     // Fetch user data from Supabase using the admin client
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(decoded.userId);

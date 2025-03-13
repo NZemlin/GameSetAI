@@ -69,25 +69,21 @@ const ensureProcessedDir = async () => {
 
 // Check if FFmpeg is installed
 const checkFfmpegInstalled = (): Promise<boolean> => {
-  return new Promise(resolve => {
-    const { exec } = require('child_process');
+  return new Promise<boolean>((resolve) => {
     const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-    console.log(`Checking FFmpeg at path: ${ffmpegPath}`);
     
-    // Use quotes around the FFmpeg path for Windows compatibility
-    exec(`"${ffmpegPath}" -version`, { windowsHide: true }, (error: any, stdout: any, stderr: any) => {
+    exec(`"${ffmpegPath}" -version`, (error, stdout) => {
       if (error) {
-        console.error('FFmpeg check error:', error.message);
         resolve(false);
         return;
       }
       
-      if (stdout) {
-        console.log('FFmpeg detected successfully');
-        console.log('FFmpeg version info:', stdout.split('\n')[0]);
+      // Check if stdout contains valid FFmpeg version
+      if (stdout && stdout.toLowerCase().includes('ffmpeg')) {
+        resolve(true);
+      } else {
+        resolve(false);
       }
-      
-      resolve(true);
     });
   });
 };
@@ -95,11 +91,14 @@ const checkFfmpegInstalled = (): Promise<boolean> => {
 // Export the FFmpeg check function as a RequestHandler
 export const checkFfmpegStatus: RequestHandler = async (req, res) => {
   try {
-    const isInstalled = await checkFfmpegInstalled();
-    res.json({ installed: isInstalled });
+    const ffmpegInstalled = await checkFfmpegInstalled();
+    res.status(200).json({
+      ffmpegInstalled,
+      ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg'
+    });
   } catch (err) {
     console.error('Error checking FFmpeg status:', err);
-    res.json({ installed: false, error: 'Error checking FFmpeg status' });
+    res.status(500).json({ error: 'Error checking FFmpeg status' });
   }
 };
 
@@ -187,6 +186,17 @@ const getPreviousPointScoreState = (
     };
   }
 };
+
+// Add the export progress tracker
+interface ExportProgress {
+  active: boolean;
+  total: number;
+  current: number;
+  completed: boolean;
+}
+
+// In-memory store to track export progress
+const exportProgressTracker: Record<string, ExportProgress> = {};
 
 /**
  * Creates a clip from a video using the specified start and end times, with an additional 5-second post-roll.
@@ -582,12 +592,9 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
     console.error('Error creating clips:', error);
     
     // Clean up all temporary files if an error occurs
-    console.log('Cleaning up temporary files due to clip creation failure...');
-    
     for (const tempFile of tempFiles) {
       try {
         await fs.unlink(tempFile);
-        console.log(`Successfully deleted temporary file: ${tempFile}`);
       } catch (err) {
         console.error(`Failed to delete temp file ${tempFile}:`, err);
       }
@@ -597,7 +604,6 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
     if (listFilePath) {
       try {
         await fs.unlink(listFilePath);
-        console.log(`Successfully deleted list file: ${listFilePath}`);
       } catch (err) {
         console.error(`Failed to delete list file ${listFilePath}:`, err);
       }
@@ -806,6 +812,14 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
     const outputFilename = `export_${exportId}.mp4`;
     const outputPath = path.join(processedVideosPath, outputFilename);
     
+    // Initialize progress tracker
+    exportProgressTracker[exportId] = {
+      active: true,
+      total: points.length,
+      current: 0,
+      completed: false
+    };
+    
     // Check if FFmpeg is installed
     const isFfmpegInstalled = await checkFfmpegInstalled();
     
@@ -837,7 +851,20 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       exportsMetadata[exportId] = exportMetadata;
       await fs.writeFile(exportsMetadataPath, JSON.stringify(exportsMetadata, null, 2), 'utf8');
       
-      res.status(200).json(exportMetadata);
+      // Mark as completed
+      exportProgressTracker[exportId] = {
+        ...exportProgressTracker[exportId],
+        active: false,
+        completed: true,
+        current: points.length
+      };
+      
+      res.status(200).json({
+        message: 'Export metadata created (FFmpeg not installed)',
+        export: exportMetadata,
+        exportId,
+        ffmpegInstalled: false
+      });
       return;
     }
     
@@ -852,6 +879,16 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       res.status(400).json({ error: 'No valid points with timestamps provided' });
       return;
     }
+    
+    // Update the total in the progress tracker
+    exportProgressTracker[exportId].total = validPoints.length;
+    
+    // Send back the initial response so the client can start checking progress
+    res.status(200).json({
+      message: 'Export started',
+      exportId,
+      ffmpegInstalled: true
+    });
     
     // Create list file path for FFmpeg
     listFilePath = path.join(processedVideosPath, `temp_list_${exportId}.txt`);
@@ -890,6 +927,9 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
           });
         });
       }
+      
+      // Update progress after each point is processed
+      exportProgressTracker[exportId].current = index + 1;
     }
     
     // Add a post-roll segment showing the final score after the last point
@@ -898,24 +938,6 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       if (lastPoint.scoreState && lastPoint.winner) {
         const postRollFilename = `temp_postroll_${exportId}.mp4`;
         const postRollPath = path.join(processedVideosPath, postRollFilename);
-        
-        // Log the last point data to understand what we're working with
-        console.log('Last point data:', {
-          winner: lastPoint.winner,
-          scoreState: {
-            player1: {
-              currentGame: lastPoint.scoreState.player1.currentGame,
-              currentSet: lastPoint.scoreState.player1.currentSet,
-              isServing: lastPoint.scoreState.player1.isServing
-            },
-            player2: {
-              currentGame: lastPoint.scoreState.player2.currentGame,
-              currentSet: lastPoint.scoreState.player2.currentSet,
-              isServing: lastPoint.scoreState.player2.isServing
-            },
-            inTiebreak: lastPoint.scoreState.inTiebreak
-          }
-        });
         
         // For the post-roll score, we need the score AFTER the last point was played
         // If we have more than one point, we can get it from the next point
@@ -933,10 +955,8 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
               matchConfig: { ...matchData.matchConfig, inTiebreak: validPoints[nextPointIndex].scoreState.inTiebreak },
               pointTime: lastPoint.endTime
             };
-            console.log('Using score state from next point for post-roll');
           } else {
             // Use the last point's score state directly, as it already includes the result of that point
-            console.log('Using last point\'s score state for post-roll');
             finalScoreData = {
               player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...lastPoint.scoreState.player1 })),
               player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...lastPoint.scoreState.player2 })),
@@ -946,7 +966,6 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
           }
         } else {
           // For a single point, use its scoreState directly (already includes the winner's point)
-          console.log('Single point, using its score state for post-roll');
           finalScoreData = {
             player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...lastPoint.scoreState.player1 })),
             player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...lastPoint.scoreState.player2 })),
@@ -954,14 +973,6 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
             pointTime: lastPoint.endTime
           };
         }
-        
-        // Log the final score to verify
-        console.log('Final score for post-roll:', {
-          player1Game: finalScoreData.player1.currentGame,
-          player2Game: finalScoreData.player2.currentGame,
-          player1Set: finalScoreData.player1.currentSet,
-          player2Set: finalScoreData.player2.currentSet
-        });
         
         // Simply take 5 seconds of video after the last point ends
         const postRollDuration = 5; // 5 seconds post-roll
@@ -1063,42 +1074,26 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
     exportsMetadata[exportId] = exportMetadata;
     await fs.writeFile(exportsMetadataPath, JSON.stringify(exportsMetadata, null, 2));
     
-    res.status(200).json({
-      message: 'Match video exported successfully',
-      export: exportMetadata,
-      ffmpegInstalled: true
-    });
+    // Mark export as completed
+    exportProgressTracker[exportId] = {
+      ...exportProgressTracker[exportId],
+      active: false,
+      completed: true
+    };
+    
   } catch (error) {
     console.error('Error in exportMatchVideo:', error);
     
+    // Update the progress tracker to show the error if we have an exportId
+    if (req.body && req.body.exportId) {
+      const { exportId } = req.body;
+      if (exportProgressTracker[exportId]) {
+        exportProgressTracker[exportId].active = false;
+        exportProgressTracker[exportId].completed = true;
+      }
+    }
+    
     // Clean up all temporary files if an error occurs
-    console.log('Cleaning up temporary files due to export failure...');
-    
-    for (const tempFile of tempFiles) {
-      try {
-        await fs.unlink(tempFile);
-        console.log(`Successfully deleted temporary file: ${tempFile}`);
-      } catch (err) {
-        console.error(`Failed to delete temp file ${tempFile}:`, err);
-      }
-    }
-    
-    // Delete the list file if it exists
-    if (listFilePath) {
-      try {
-        await fs.unlink(listFilePath);
-        console.log(`Successfully deleted list file: ${listFilePath}`);
-      } catch (err) {
-        console.error(`Failed to delete list file ${listFilePath}:`, err);
-      }
-    }
-    
-    // Return error to client
-    res.status(500).json({ 
-      error: 'Failed to export video', 
-      message: error instanceof Error ? error.message : String(error),
-      details: 'All temporary files have been cleaned up.'
-    });
   }
 };
 
@@ -1328,5 +1323,18 @@ export const downloadExport: RequestHandler = async (req, res) => {
   } catch (err) {
     console.error('Error downloading export:', err);
     res.status(500).json({ error: 'Failed to download export' });
+  }
+};
+
+// Add this endpoint to your exports
+export const getExportProgress: RequestHandler = async (req, res) => {
+  const { exportId } = req.params;
+  
+  if (!exportId) {
+    res.status(400).json({ error: 'Export ID is required' });
+  } else if (!exportProgressTracker[exportId]) {
+    res.status(404).json({ error: 'Export not found or no progress data available' });
+  } else {
+    res.status(200).json({ progress: exportProgressTracker[exportId] });
   }
 };

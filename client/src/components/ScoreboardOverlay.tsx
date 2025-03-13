@@ -12,6 +12,17 @@ interface ScoreboardOverlayProps {
  * A simplified scoreboard overlay for rendering onto exported videos
  */
 const ScoreboardOverlay: React.FC<ScoreboardOverlayProps> = ({ player1, player2, matchConfig }) => {
+  // For tiebreak mode, determine if we should show the last completed set
+  const showCompletedTiebreak = matchConfig.type === 'tiebreak' && 
+                              player1.completedSets.length > 0 && 
+                              player2.completedSets.length > 0 && 
+                              (player1.currentGame === 0 && player2.currentGame === 0);
+                              
+  // Get the last completed set scores for tiebreak mode
+  const lastSetIndex = player1.completedSets.length - 1;
+  const lastTiebreakScore1 = showCompletedTiebreak && lastSetIndex >= 0 ? player1.completedSets[lastSetIndex].score : null;
+  const lastTiebreakScore2 = showCompletedTiebreak && lastSetIndex >= 0 ? player2.completedSets[lastSetIndex].score : null;
+  
   return (
     <div className="absolute bottom-5 left-5 bg-black bg-opacity-75 text-white p-2 rounded shadow-lg">
       <table className="table-auto text-sm">
@@ -47,7 +58,7 @@ const ScoreboardOverlay: React.FC<ScoreboardOverlayProps> = ({ player1, player2,
             
             {matchConfig.type === 'tiebreak' && (
               <td className="px-2 py-1 text-center">
-                {player1.currentGame}
+                {showCompletedTiebreak ? lastTiebreakScore1 : player1.currentGame}
               </td>
             )}
           </tr>
@@ -83,7 +94,7 @@ const ScoreboardOverlay: React.FC<ScoreboardOverlayProps> = ({ player1, player2,
             
             {matchConfig.type === 'tiebreak' && (
               <td className="px-2 py-1 text-center">
-                {player2.currentGame}
+                {showCompletedTiebreak ? lastTiebreakScore2 : player2.currentGame}
               </td>
             )}
           </tr>
