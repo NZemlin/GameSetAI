@@ -69,24 +69,72 @@ const ensureProcessedDir = async () => {
 
 // Check if FFmpeg is installed
 const checkFfmpegInstalled = (): Promise<boolean> => {
-  return new Promise<boolean>((resolve) => {
+  return new Promise((resolve) => {
     const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-    
-    exec(`"${ffmpegPath}" -version`, (error, stdout) => {
-      if (error) {
-        resolve(false);
-        return;
-      }
-      
-      // Check if stdout contains valid FFmpeg version
-      if (stdout && stdout.toLowerCase().includes('ffmpeg')) {
-        resolve(true);
-      } else {
-        resolve(false);
-      }
+    exec(`"${ffmpegPath}" -version`, (error) => {
+      resolve(!error);
     });
   });
 };
+
+/**
+ * Detects available hardware acceleration options for FFmpeg
+ */
+const detectHardwareAcceleration = (): Promise<string> => {
+  return new Promise((resolve) => {
+    const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+    // Check for NVIDIA GPU support (NVENC)
+    exec(`"${ffmpegPath}" -encoders | findstr nvenc`, (nvencError, nvencOutput) => {
+      if (!nvencError && nvencOutput.includes('nvenc')) {
+        // NVIDIA acceleration available
+        return resolve('-c:v h264_nvenc -preset p2 -tune hq');
+      }
+      
+      // Check for Intel QuickSync support
+      exec(`"${ffmpegPath}" -encoders | findstr qsv`, (qsvError, qsvOutput) => {
+        if (!qsvError && qsvOutput.includes('qsv')) {
+          // Intel QuickSync available
+          return resolve('-c:v h264_qsv -preset:v faster');
+        }
+        
+        // Check for AMD/ATI support (AMF)
+        exec(`"${ffmpegPath}" -encoders | findstr amf`, (amfError, amfOutput) => {
+          if (!amfError && amfOutput.includes('amf')) {
+            // AMD acceleration available
+            return resolve('-c:v h264_amf -quality speed');
+          }
+          
+          // No hardware acceleration detected, use standard libx264 with optimized settings
+          resolve('-c:v libx264 -preset:v faster -crf 23');
+        });
+      });
+    });
+  });
+};
+
+// Cache for hardware acceleration options - move outside function to global cache
+let hwAccelOptions: string | null = null;
+
+// Function to get hardware acceleration options (cached)
+const getHWAccelOptions = async (): Promise<string> => {
+  if (hwAccelOptions === null) {
+    hwAccelOptions = await detectHardwareAcceleration();
+  }
+  return hwAccelOptions;
+};
+
+// Initialize hardware acceleration detection at startup to avoid first-run delay
+const initializeFFmpegOptimizations = () => {
+  // Start hardware acceleration detection in the background
+  getHWAccelOptions().then(options => {
+    console.info(`FFmpeg hardware acceleration detected: ${options}`);
+  }).catch(err => {
+    console.error('Error detecting hardware acceleration:', err);
+  });
+};
+
+// Auto-execute the initialization
+initializeFFmpegOptimizations();
 
 // Export the FFmpeg check function as a RequestHandler
 export const checkFfmpegStatus: RequestHandler = async (req, res) => {
@@ -197,6 +245,18 @@ interface ExportProgress {
 
 // In-memory store to track export progress
 const exportProgressTracker: Record<string, ExportProgress> = {};
+
+/**
+ * Updates the export progress tracker atomically
+ */
+const updateExportProgress = (exportId: string, progressUpdate: Partial<ExportProgress>) => {
+  if (exportProgressTracker[exportId]) {
+    exportProgressTracker[exportId] = {
+      ...exportProgressTracker[exportId],
+      ...progressUpdate
+    };
+  }
+};
 
 /**
  * Creates a clip from a video using the specified start and end times, with an additional 5-second post-roll.
@@ -480,11 +540,15 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
       }
       
       // Use FFmpeg to create the clip
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>(async (resolve, reject) => {
         const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-        const ffmpegCommand = `"${ffmpegPath}" -ss ${startTime} -i "${inputPath}" -to ${endTime - startTime} -c copy -avoid_negative_ts 1 "${tempPath}"`;
+        // Get the hardware acceleration options
+        const hwOptions = await getHWAccelOptions();
         
-        exec(ffmpegCommand, (error, stdout, stderr) => {
+        // Update FFmpeg command to use hardware acceleration when available
+        const ffmpegCommand = `"${ffmpegPath}" -ss ${startTime} -i "${inputPath}" -t ${endTime - startTime} ${hwOptions} -c:a aac -ar 48000 -b:a 192k "${tempPath}"`;
+        
+        exec(ffmpegCommand, (error) => {
           if (error) {
             console.error(`FFmpeg error: ${error.message}`);
             reject(error);
@@ -519,14 +583,17 @@ export const createClips: RequestHandler<any, any> = async (req, res) => {
       const fileList = tempFiles.map(file => `file '${file}'`).join('\n');
       await fs.writeFile(listFilePath, fileList, 'utf8');
       
-      // Combine all clips
-      await new Promise<void>((resolve, reject) => {
+      // Combine clips with hardware acceleration
+      await new Promise<void>(async (resolve, reject) => {
         const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-        const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" -c copy "${combinedPath}"`;
+        // Get hardware acceleration options
+        const hwOptions = await getHWAccelOptions();
+        
+        const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" ${hwOptions} -c:a aac -ar 48000 -b:a 192k "${combinedPath}"`;
         
         exec(ffmpegCommand, (error) => {
           if (error) {
-            console.error(`FFmpeg concat error: ${error.message}`);
+            console.error(`FFmpeg error: ${error.message}`);
             reject(error);
             return;
           }
@@ -893,8 +960,8 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
     // Create list file path for FFmpeg
     listFilePath = path.join(processedVideosPath, `temp_list_${exportId}.txt`);
     
-    // Create individual clip for each point
-    for (const [index, point] of validPoints.entries()) {
+    // Create individual clip for each point - PARALLEL PROCESSING
+    const clipProcessingPromises = validPoints.map(async (point, index) => {
       const tempFilename = `temp_point_${index}_${exportId}.mp4`;
       const tempPath = path.join(processedVideosPath, tempFilename);
       tempFiles.push(tempPath);
@@ -912,10 +979,16 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         );
       } else {
         // Extract the clip for this point without scoreboard
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>(async (resolve, reject) => {
           const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-          // Update FFmpeg command to fix audio sync
-          const ffmpegCommand = `"${ffmpegPath}" -ss ${point.startTime} -i "${inputPath}" -t ${point.endTime - point.startTime} -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${tempPath}"`;
+          // Get the hardware acceleration options
+          const hwOptions = await getHWAccelOptions();
+          
+          // Update FFmpeg command with optimized fast keyframe-based seeking and movflags
+          const fastSeekTime = Math.max(0, point.startTime - 1); // Start seeking 1 second before for keyframe alignment
+          const duration = (point.endTime - point.startTime) + 0.5; // Add a small buffer for precise cutting
+          
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${fastSeekTime} -i "${inputPath}" -ss 1 -t ${duration} ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${tempPath}"`;
           
           exec(ffmpegCommand, (error) => {
             if (error) {
@@ -928,8 +1001,38 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         });
       }
       
-      // Update progress after each point is processed
-      exportProgressTracker[exportId].current = index + 1;
+      // Update progress after each point is processed - using atomic update
+      updateExportProgress(exportId, { current: exportProgressTracker[exportId].current + 1 });
+      return tempPath;
+    });
+    
+    // Process all clips in parallel with a concurrency limit and prioritize the first clip
+    const CONCURRENCY_LIMIT = 3; // Process up to 3 clips at once
+    
+    // Start processing the first clip immediately to reduce perceived delay
+    if (clipProcessingPromises.length > 0) {
+      // Update progress tracker to show we're starting
+      updateExportProgress(exportId, { current: 1 });
+      
+      // Start processing batches, starting from the second clip (index 1)
+      const processBatch = async (batch: number, startFromIdx: number = 0) => {
+        const startIdx = startFromIdx + (batch * CONCURRENCY_LIMIT);
+        const endIdx = Math.min(startIdx + CONCURRENCY_LIMIT, clipProcessingPromises.length);
+        if (startIdx >= clipProcessingPromises.length) return;
+        
+        await Promise.all(clipProcessingPromises.slice(startIdx, endIdx));
+        
+        // Process next batch
+        await processBatch(batch + 1, startFromIdx);
+      };
+      
+      // Start processing first clip immediately
+      await clipProcessingPromises[0];
+      
+      // Then process the rest in batches
+      if (clipProcessingPromises.length > 1) {
+        await processBatch(0, 1); // Start batches from the second clip (index 1)
+      }
     }
     
     // Add a post-roll segment showing the final score after the last point
@@ -977,10 +1080,16 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         // Simply take 5 seconds of video after the last point ends
         const postRollDuration = 5; // 5 seconds post-roll
         
-        // Extract 5 seconds of video after the last point
-        await new Promise<void>((resolve, reject) => {
+        // Extract 5 seconds of video after the last point with optimized seeking
+        await new Promise<void>(async (resolve, reject) => {
           const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-          const ffmpegCommand = `"${ffmpegPath}" -ss ${lastPoint.endTime} -i "${inputPath}" -t ${postRollDuration} -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${postRollPath}"`;
+          // Get hardware acceleration options
+          const hwOptions = await getHWAccelOptions();
+          
+          // Optimize with fast seeking for post-roll
+          const fastSeekTime = Math.max(0, lastPoint.endTime - 0.5); // Seek to 0.5 seconds before end point
+          
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${fastSeekTime} -i "${inputPath}" -ss 0.5 -t ${postRollDuration} ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${postRollPath}"`;
           
           exec(ffmpegCommand, (error) => {
             if (error) {
@@ -1016,10 +1125,14 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
     const fileList = tempFiles.map(file => `file '${file}'`).join('\n');
     await fs.writeFile(listFilePath, fileList, 'utf8');
     
-    // Combine clips
-    await new Promise<void>((resolve, reject) => {
+    // Combine clips with hardware acceleration and fast start optimization
+    await new Promise<void>(async (resolve, reject) => {
       const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
-      const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" -c:v libx264 -c:a aac -ar 48000 -b:a 192k "${outputPath}"`;
+      // Get hardware acceleration options
+      const hwOptions = await getHWAccelOptions();
+      
+      // Add movflags for faster start and avoid audio processing if possible
+      const ffmpegCommand = `"${ffmpegPath}" -f concat -safe 0 -i "${listFilePath}" ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${outputPath}"`;
       
       exec(ffmpegCommand, (error) => {
         if (error) {

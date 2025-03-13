@@ -79,7 +79,13 @@ const ClipManager = ({
   const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
   const [includeScoreboard, setIncludeScoreboard] = useState<boolean>(false);
   const [ffmpegInstalled, setFffmpegInstalled] = useState<boolean | null>(null);
-  const [exportProgress, setExportProgress] = useState<{active: boolean, total: number, current: number} | null>(null);
+  const [exportProgress, setExportProgress] = useState<{
+    active: boolean, 
+    total: number, 
+    current: number, 
+    message?: string,
+    phase: 'initializing' | 'processing' | 'finalizing'
+  } | null>(null);
 
   // Get the JWT token from localStorage
   const token = localStorage.getItem('token');
@@ -281,7 +287,7 @@ const ClipManager = ({
     }
   };
 
-  // Function to export selected points
+  // Function to export selected points with improved feedback
   const exportSelectedPoints = async (videoName?: string) => {
     if (selectedPoints.length === 0) {
       setError('Please select at least one point to export');
@@ -296,16 +302,23 @@ const ClipManager = ({
       point => point.startTime !== null && point.endTime !== null
     );
     
-    // Set initial export progress
+    // Start with initialization phase
     const initialProgress = {
       active: true,
       total: pointsToExport.length,
-      current: 0
+      current: 0,
+      message: "Preparing export...",
+      phase: 'initializing' as const
     };
     setExportProgress(initialProgress);
     
     // Store the export status in localStorage
     localStorage.setItem(`export_status_${videoId}`, JSON.stringify(initialProgress));
+    
+    // Notify parent component about export status immediately
+    if (onExportStatusChange) {
+      onExportStatusChange(true);
+    }
 
     try {
       // Prepare match data if scoreboard is to be included
@@ -350,18 +363,37 @@ const ClipManager = ({
           const { progress } = progressResponse.data;
           
           if (progress) {
+            // Keep initialization phase until we've made significant progress
+            // This ensures we don't show "1/56" too early
+            let currentPhase = exportProgress?.phase || 'initializing';
+            
+            // Only transition to processing when we've processed multiple points
+            // or when the server explicitly signals it's ready
+            if (currentPhase === 'initializing' && progress.current > 1) {
+              currentPhase = 'processing';
+            }
+            
+            // Always enter finalizing phase when all points are processed
+            if (progress.current >= progress.total) {
+              currentPhase = 'finalizing';
+            }
+            
             // Update the progress state
             setExportProgress({
               active: progress.active,
               total: progress.total,
-              current: progress.current
+              current: progress.current,
+              message: progress.message,
+              phase: currentPhase
             });
             
             // Update localStorage
             localStorage.setItem(`export_status_${videoId}`, JSON.stringify({
               active: progress.active,
               total: progress.total,
-              current: progress.current
+              current: progress.current,
+              message: progress.message,
+              phase: currentPhase
             }));
             
             // Reset retry counter on successful response
@@ -560,18 +592,31 @@ const ClipManager = ({
           {/* Export progress indicator */}
           {exportProgress && exportProgress.active && (
             <div className="mb-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>Exporting video...</span>
+              <div className="flex justify-start text-sm text-gray-600 mb-1">
                 <span>
-                  {exportProgress.current >= exportProgress.total 
-                    ? "Finishing export..." 
-                    : `${exportProgress.current} of ${exportProgress.total} points processed`}
+                  {exportProgress.phase === 'finalizing' 
+                    ? "Finalizing video and optimizing playback..." 
+                    : exportProgress.phase === 'initializing'
+                      ? "Preparing hardware and resources for export..."
+                      : `${exportProgress.current} of ${exportProgress.total} points processed`}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div 
-                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
-                  style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                  style={{ 
+                    width: exportProgress.phase === 'finalizing' 
+                      ? '100%' 
+                      : exportProgress.phase === 'initializing'
+                        ? '20%' // Fixed starting width for initializing, animation handled by CSS classes
+                        : `${(exportProgress.current / exportProgress.total) * 100}%` 
+                  }}
+                  className={`${
+                    exportProgress.phase === 'finalizing' 
+                      ? 'bg-indigo-500 animate-pulse' 
+                      : exportProgress.phase === 'initializing'
+                        ? 'bg-indigo-400 animate-initialization'
+                        : 'bg-indigo-600'
+                  } h-2.5 rounded-full transition-all duration-500`}
                 ></div>
               </div>
             </div>
