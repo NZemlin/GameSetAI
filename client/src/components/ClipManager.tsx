@@ -86,6 +86,32 @@ const ClipManager = ({
     message?: string,
     phase: 'initializing' | 'processing' | 'finalizing'
   } | null>(null);
+  
+  // State to control animation completion
+  const [initAnimationComplete, setInitAnimationComplete] = useState(false);
+  const [readyToProcess, setReadyToProcess] = useState(false);
+  
+  // Animation completion timer - when true backend is ready for processing
+  // but we want to finish the initialization animation first
+  useEffect(() => {
+    if (!exportProgress) return;
+    
+    // When we detect that actual processing has started (but still in init phase)
+    if (exportProgress.phase === 'initializing' && exportProgress.current > 0 && !readyToProcess) {
+      setReadyToProcess(true);
+    }
+    
+    // Once animation is complete and backend is ready, transition to processing
+    if (readyToProcess && initAnimationComplete && exportProgress.phase === 'initializing') {
+      setExportProgress(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          phase: 'processing'
+        };
+      });
+    }
+  }, [exportProgress, readyToProcess, initAnimationComplete]);
 
   // Get the JWT token from localStorage
   const token = localStorage.getItem('token');
@@ -298,6 +324,10 @@ const ClipManager = ({
     setError(null);
     setSuccess(null);
     
+    // Reset animation state for new export
+    setInitAnimationComplete(false);
+    setReadyToProcess(false);
+    
     const pointsToExport = selectedPoints.map(index => points[index]).filter(
       point => point.startTime !== null && point.endTime !== null
     );
@@ -364,14 +394,8 @@ const ClipManager = ({
           
           if (progress) {
             // Keep initialization phase until we've made significant progress
-            // This ensures we don't show "1/56" too early
+            // and the animation has completed
             let currentPhase = exportProgress?.phase || 'initializing';
-            
-            // Only transition to processing when we've processed multiple points
-            // or when the server explicitly signals it's ready
-            if (currentPhase === 'initializing' && progress.current > 1) {
-              currentPhase = 'processing';
-            }
             
             // Always enter finalizing phase when all points are processed
             if (progress.current >= progress.total) {
@@ -607,7 +631,7 @@ const ClipManager = ({
                     width: exportProgress.phase === 'finalizing' 
                       ? '100%' 
                       : exportProgress.phase === 'initializing'
-                        ? '20%' // Fixed starting width for initializing, animation handled by CSS classes
+                        ? '' // Let the animation control the width
                         : `${(exportProgress.current / exportProgress.total) * 100}%` 
                   }}
                   className={`${
@@ -617,6 +641,11 @@ const ClipManager = ({
                         ? 'bg-indigo-400 animate-initialization'
                         : 'bg-indigo-600'
                   } h-2.5 rounded-full transition-all duration-500`}
+                  onAnimationEnd={() => {
+                    if (exportProgress.phase === 'initializing') {
+                      setInitAnimationComplete(true);
+                    }
+                  }}
                 ></div>
               </div>
             </div>

@@ -128,10 +128,84 @@ const initializeFFmpegOptimizations = () => {
   // Start hardware acceleration detection in the background
   getHWAccelOptions().then(options => {
     console.info(`FFmpeg hardware acceleration detected: ${options}`);
-  }).catch(err => {
-    console.error('Error detecting hardware acceleration:', err);
   });
 };
+
+// Call the function at module load time
+initializeFFmpegOptimizations();
+
+// Cache for video information to avoid repeated analysis
+const videoInfoCache: {[videoId: string]: {duration: number, path: string}} = {};
+
+// Pre-analyze video file to determine duration and cache the information
+export const getVideoInfo = async (videoId: string): Promise<{duration: number, path: string}> => {
+  // Return from cache if available
+  if (videoInfoCache[videoId]) {
+    console.log(`Using cached video info for ID: ${videoId}`);
+    return videoInfoCache[videoId];
+  }
+  
+  console.log(`Analyzing video with ID: ${videoId}`);
+  const uploadsDir = path.join(__dirname, '../../uploads');
+  
+  try {
+    // Make sure the uploads directory exists
+    await fs.access(uploadsDir);
+  } catch (err) {
+    console.error(`Uploads directory not found: ${uploadsDir}`);
+    throw new Error(`Uploads directory not found`);
+  }
+  
+  // Read directory contents
+  let files;
+  try {
+    files = await fs.readdir(uploadsDir);
+    console.log(`Found ${files.length} files in uploads directory`);
+  } catch (err) {
+    console.error(`Error reading uploads directory: ${err}`);
+    throw new Error(`Could not read uploads directory: ${err}`);
+  }
+  
+  // Try to find file by exact ID first
+  const exactMatch = files.find(filename => filename === videoId || filename === `${videoId}.mp4` || 
+                                          filename === `${videoId}.webm` || filename === `${videoId}.mov`);
+  
+  // If no exact match, try prefix match
+  const videoFile = exactMatch || files.find(filename => filename.startsWith(videoId));
+  
+  if (!videoFile) {
+    console.error(`No matching file found for ID: ${videoId}`);
+    console.log(`Available files:`, files);
+    throw new Error(`Video file not found for ID: ${videoId}`);
+  }
+  
+  console.log(`Found video file for analysis: ${videoFile}`);
+  const videoPath = path.join(uploadsDir, videoFile);
+  
+  let duration;
+  try {
+    duration = await getVideoDuration(videoPath);
+    console.log(`Video duration: ${duration} seconds`);
+  } catch (err) {
+    console.error(`Error determining video duration: ${err}`);
+    // Default to a reasonable duration if can't determine
+    duration = 0;
+  }
+  
+  // Store in cache
+  videoInfoCache[videoId] = {duration, path: videoPath};
+  console.log(`Cached video info for ID: ${videoId}`);
+  
+  return {duration, path: videoPath};
+};
+
+// Create empty output folders at startup
+const initializeOutputDirectories = async () => {
+  await ensureProcessedDir();
+};
+
+// Initialize directories at module load time
+initializeOutputDirectories();
 
 // Auto-execute the initialization
 initializeFFmpegOptimizations();
@@ -241,6 +315,7 @@ interface ExportProgress {
   total: number;
   current: number;
   completed: boolean;
+  message?: string;
 }
 
 // In-memory store to track export progress
@@ -824,11 +899,17 @@ const getVideoDuration = async (videoPath: string): Promise<number> => {
  * Exports a match video with selected points and optional scoreboard
  */
 export const exportMatchVideo: RequestHandler = async (req, res) => {
-  await ensureProcessedDir();
+  // Create progress tracker and ID early
+  const exportId = uuidv4();
   
-  // Track all temporary files for cleanup
-  const tempFiles: string[] = [];
-  let listFilePath = '';
+  // Set up initial progress tracker immediately
+  exportProgressTracker[exportId] = {
+    active: true,
+    total: 0, // Will be updated once we have points
+    current: 0,
+    completed: false,
+    message: "Preparing export resources..."
+  };
   
   try {
     const { videoId, points, includeScoreboard = false, videoName = '', matchData = null } = req.body;
@@ -838,14 +919,40 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       return;
     }
     
-    // Find the source video
-    const uploadsDir = path.join(__dirname, '../../uploads');
-    const files = await fs.readdir(uploadsDir);
-    const videoFile = files.find(filename => filename.startsWith(videoId));
+    // Return export ID immediately so client can start polling
+    res.status(200).json({ 
+      exportId,
+      message: 'Export started',
+      ffmpegInstalled: await checkFfmpegInstalled()
+    });
     
-    if (!videoFile) {
-      res.status(404).json({ error: 'Source video not found' });
-      return;
+    // Update total point count now that we know it
+    exportProgressTracker[exportId].total = points.length;
+    
+    // All code below runs after response is sent
+    
+    // Track all temporary files for cleanup
+    const tempFiles: string[] = [];
+    let listFilePath = '';
+    
+    // Get video info - using cache if available
+    let videoPath: string;
+    let videoFile: string;
+    try {
+      const videoInfo = await getVideoInfo(videoId);
+      videoPath = videoInfo.path;
+      videoFile = path.basename(videoPath);
+    } catch (error) {
+      // Fall back to traditional lookup if not in cache
+      const uploadsDir = path.join(__dirname, '../../uploads');
+      const files = await fs.readdir(uploadsDir);
+      videoFile = files.find(filename => filename.startsWith(videoId)) || '';
+      
+      if (!videoFile) {
+        throw new Error(`Video file not found for ID: ${videoId}`);
+      }
+      
+      videoPath = path.join(uploadsDir, videoFile);
     }
     
     // Get video title from metadata if available, otherwise use default
@@ -874,18 +981,8 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       ? `${videoTitle} - Highlights (${dateStr})` 
       : `Match Highlights - ${dateStr}`;
     
-    const inputPath = path.join(uploadsDir, videoFile);
-    const exportId = uuidv4();
     const outputFilename = `export_${exportId}.mp4`;
     const outputPath = path.join(processedVideosPath, outputFilename);
-    
-    // Initialize progress tracker
-    exportProgressTracker[exportId] = {
-      active: true,
-      total: points.length,
-      current: 0,
-      completed: false
-    };
     
     // Check if FFmpeg is installed
     const isFfmpegInstalled = await checkFfmpegInstalled();
@@ -926,13 +1023,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         current: points.length
       };
       
-      res.status(200).json({
-        message: 'Export metadata created (FFmpeg not installed)',
-        export: exportMetadata,
-        exportId,
-        ffmpegInstalled: false
-      });
-      return;
+      return; // We've already sent the response earlier
     }
     
     // Filter valid points with startTime and endTime
@@ -943,19 +1034,18 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
     );
     
     if (validPoints.length === 0) {
-      res.status(400).json({ error: 'No valid points with timestamps provided' });
+      // Don't send response, as we've already sent it earlier
+      exportProgressTracker[exportId] = {
+        ...exportProgressTracker[exportId],
+        active: false,
+        completed: true,
+        message: "No valid points found"
+      };
       return;
     }
     
     // Update the total in the progress tracker
     exportProgressTracker[exportId].total = validPoints.length;
-    
-    // Send back the initial response so the client can start checking progress
-    res.status(200).json({
-      message: 'Export started',
-      exportId,
-      ffmpegInstalled: true
-    });
     
     // Create list file path for FFmpeg
     listFilePath = path.join(processedVideosPath, `temp_list_${exportId}.txt`);
@@ -971,7 +1061,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         const pointScoreData = getPreviousPointScoreState(validPoints, index, matchData);
         
         await renderClipWithScoreboard(
-          inputPath,
+          videoPath,
           tempPath,
           point.startTime,
           point.endTime - point.startTime,
@@ -988,7 +1078,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
           const fastSeekTime = Math.max(0, point.startTime - 1); // Start seeking 1 second before for keyframe alignment
           const duration = (point.endTime - point.startTime) + 0.5; // Add a small buffer for precise cutting
           
-          const ffmpegCommand = `"${ffmpegPath}" -ss ${fastSeekTime} -i "${inputPath}" -ss 1 -t ${duration} ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${tempPath}"`;
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${fastSeekTime} -i "${videoPath}" -ss 1 -t ${duration} ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${tempPath}"`;
           
           exec(ffmpegCommand, (error) => {
             if (error) {
@@ -1043,7 +1133,6 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
         const postRollPath = path.join(processedVideosPath, postRollFilename);
         
         // For the post-roll score, we need the score AFTER the last point was played
-        // If we have more than one point, we can get it from the next point
         let finalScoreData;
         
         if (validPoints.length > 1) {
@@ -1059,7 +1148,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
               pointTime: lastPoint.endTime
             };
           } else {
-            // Use the last point's score state directly, as it already includes the result of that point
+            // Use the last point's score state directly
             finalScoreData = {
               player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...lastPoint.scoreState.player1 })),
               player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...lastPoint.scoreState.player2 })),
@@ -1068,7 +1157,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
             };
           }
         } else {
-          // For a single point, use its scoreState directly (already includes the winner's point)
+          // For a single point, use its scoreState directly
           finalScoreData = {
             player1: JSON.parse(JSON.stringify({ ...matchData.player1, ...lastPoint.scoreState.player1 })),
             player2: JSON.parse(JSON.stringify({ ...matchData.player2, ...lastPoint.scoreState.player2 })),
@@ -1089,7 +1178,7 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
           // Optimize with fast seeking for post-roll
           const fastSeekTime = Math.max(0, lastPoint.endTime - 0.5); // Seek to 0.5 seconds before end point
           
-          const ffmpegCommand = `"${ffmpegPath}" -ss ${fastSeekTime} -i "${inputPath}" -ss 0.5 -t ${postRollDuration} ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${postRollPath}"`;
+          const ffmpegCommand = `"${ffmpegPath}" -ss ${fastSeekTime} -i "${videoPath}" -ss 0.5 -t ${postRollDuration} ${hwOptions} -c:a aac -ar 48000 -b:a 192k -movflags +faststart "${postRollPath}"`;
           
           exec(ffmpegCommand, (error) => {
             if (error) {
@@ -1193,7 +1282,6 @@ export const exportMatchVideo: RequestHandler = async (req, res) => {
       active: false,
       completed: true
     };
-    
   } catch (error) {
     console.error('Error in exportMatchVideo:', error);
     

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getVideoInfo } from './videoProcessingController';
 
 interface VideoMetadata {
   [key: string]: {
@@ -140,26 +141,43 @@ export const getVideo: RequestHandler = async (
     const files = await fs.readdir(uploadsDir);
     const metadata = await getMetadata();
 
+    // Log information to help diagnose issues
+    console.log(`Looking for video with ID: ${id}`);
+    console.log(`Available files in uploads directory:`, files);
+    
     // Find the video file
     const videoFile = files.find(filename => filename.startsWith(id));
 
     if (!videoFile) {
+      console.error(`No matching file found for ID: ${id}`);
       res.status(404).json({ error: 'Video not found' });
       return;
     }
+    
+    console.log(`Found video file: ${videoFile}`);
 
     const filePath = path.join(uploadsDir, videoFile);
     const stats = await fs.stat(filePath);
 
-    const video = {
-      id,
-      filename: videoFile,
-      name: metadata[id]?.name || videoFile,
-      path: `uploads/${videoFile}`,
-      createdAt: metadata[id]?.uploadDate || stats.birthtime.toISOString(),
-    };
+    // Return the video information with the path in the format expected by the client
+    res.status(200).json({
+      video: {
+        id,
+        filename: videoFile,
+        name: metadata[id]?.name || videoFile,
+        path: `uploads/${videoFile}`, // Remove the leading slash to maintain compatibility
+        createdAt: metadata[id]?.uploadDate || stats.birthtime.toISOString()
+      }
+    });
 
-    res.json({ video });
+    // Prefetch video info for export optimization (non-blocking)
+    setTimeout(() => {
+      getVideoInfo(id).catch((err: Error) => {
+        // Silently fail - this is just an optimization
+        console.warn(`Failed to prefetch video info for ${id}:`, err);
+      });
+    }, 0);
+
   } catch (error) {
     next(error);
   }
@@ -174,6 +192,7 @@ export const deleteVideo: RequestHandler = async (
     const { id } = req.params;
     const uploadsDir = path.join(__dirname, '../../uploads');
     const processedDir = path.join(__dirname, '../../processed');
+    const dataDir = path.join(__dirname, '../../data');
 
     // Get metadata
     const metadata = await getMetadata();
@@ -204,7 +223,7 @@ export const deleteVideo: RequestHandler = async (
       console.log(`Successfully deleted processed video file: ${processedVideoPath}`);
     } catch (err) {
       console.error(`Error deleting processed video file: ${err}`);
-      // Ignore if processed file doesn’t exist
+      // Ignore if processed file doesn't exist
     }
 
     // Delete associated clips
@@ -215,7 +234,7 @@ export const deleteVideo: RequestHandler = async (
         const clipsContent = await fs.readFile(clipsPath, 'utf8');
         clipsData = JSON.parse(clipsContent);
       } catch (readErr) {
-        console.log('No clips.json found or it’s empty; proceeding with empty object');
+        console.log("No clips.json found or it's empty; proceeding with empty object");
       }
 
       for (const [clipId, clip] of Object.entries(clipsData)) {
@@ -244,7 +263,7 @@ export const deleteVideo: RequestHandler = async (
         const exportsContent = await fs.readFile(exportsPath, 'utf8');
         exportsData = JSON.parse(exportsContent);
       } catch (readErr) {
-        console.log('No exports.json found or it’s empty; proceeding with empty object');
+        console.log("No exports.json found or it's empty; proceeding with empty object");
       }
 
       for (const [exportId, exp] of Object.entries(exportsData)) {
@@ -265,13 +284,36 @@ export const deleteVideo: RequestHandler = async (
       console.error('Error handling exports during video deletion:', err);
     }
 
+    // Delete associated match data
+    try {
+      const matchDataPath = path.join(dataDir, 'match_data.json');
+      let matchData: { [key: string]: any } = {};
+      
+      try {
+        const matchContent = await fs.readFile(matchDataPath, 'utf8');
+        matchData = JSON.parse(matchContent);
+        
+        if (matchData[id]) {
+          delete matchData[id];
+          await fs.writeFile(matchDataPath, JSON.stringify(matchData, null, 2));
+          console.log(`Successfully deleted match data for video ID: ${id}`);
+        } else {
+          console.log(`No match data found for video ID: ${id}`);
+        }
+      } catch (readErr) {
+        console.log("No match_data.json found or it's empty; no match data to delete");
+      }
+    } catch (err) {
+      console.error(`Error deleting match data for video ID: ${id}:`, err);
+    }
+
     // Remove video from metadata
     delete metadata[id];
     await saveMetadata(metadata);
     console.log('Metadata updated successfully');
 
     // Send success response
-    res.status(200).json({ success: true, message: 'Video and associated clips and exports deleted successfully' });
+    res.status(200).json({ success: true, message: 'Video and associated clips, exports, and match data deleted successfully' });
   } catch (error) {
     next(error);
   }

@@ -9,22 +9,18 @@ const Layout = () => {
 
   const checkAuth = async () => {
     const token = localStorage.getItem('token');
-    console.log('Token from localStorage:', token);
 
     if (!token) {
-      console.log('No token found, setting isAuthenticated to false');
       setIsAuthenticated(false);
       return;
     }
 
     try {
-      console.log('Validating token with backend...');
       const response = await axios.get('http://localhost:3000/api/auth/validate-token', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-      console.log('Token validation response:', response.data);
       setIsAuthenticated(response.status === 200);
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
@@ -72,8 +68,6 @@ const Layout = () => {
   if (isAuthPage) {
     return <Outlet />;
   }
-
-  console.log('Rendering Layout, isAuthenticated:', isAuthenticated);
 
   return (
     <div className="min-h-screen bg-gray-100">
