@@ -1,64 +1,63 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Login from './pages/auth/Login';
-import Signup from './pages/auth/Signup';
-import ResetPassword from './pages/auth/ResetPassword';
-import RequestReset from './pages/auth/RequestReset';
-import Dashboard from './pages/Dashboard';
-import Profile from './pages/Profile';
-import VideoUpload from './pages/VideoUpload';
-import Videos from './pages/Videos';
-import VideoEdit from './pages/VideoEdit';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './auth/AuthContext';
+import ProtectedRoute from './auth/ProtectedRoute';
 import Layout from './components/Layout';
-import ProtectedRoute from './components/ProtectedRoute';
+import Library from './pages/Library';
+import Upload from './pages/Upload';
+import Editor from './pages/Editor';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import Settings from './pages/Settings';
 
-function App() {
+export default function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Auth Routes */}
-        <Route element={<Layout />}>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/request-reset" element={<RequestReset />} />
-          
-          {/* Protected Routes */}
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/videos" element={
-            <ProtectedRoute>
-              <Videos />
-            </ProtectedRoute>
-          } />
-          <Route path="/edit/:id" element={
-            <ProtectedRoute>
-              <VideoEdit />
-            </ProtectedRoute>
-          } />
-          <Route path="/profile" element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          } />
-          <Route path="/upload" element={
-            <ProtectedRoute>
-              <VideoUpload />
-            </ProtectedRoute>
-          } />
-
-          {/* Redirect root to dashboard */}
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-        </Route>
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/m/:token" element={<Editor share />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Library />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/upload"
+              element={
+                <ProtectedRoute>
+                  <Upload />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/edit/:id"
+              element={
+                <ProtectedRoute>
+                  <Editor />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
-
-export default App;

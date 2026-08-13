@@ -1,120 +1,50 @@
 # GameSetAI
 
-A video analysis and editing platform for tennis matches, featuring video processing, scorekeeping, and clip creation capabilities.
+Local tennis match editor: sign in, upload a video, score points on a timeline, export a highlight reel with an optional scoreboard. Share a link so someone can open the same editor and fix the score without an account.
 
-## Features
+## Requirements
 
-- **Video Upload & Management**: Upload and organize tennis match videos
-- **Scoring System**: Track match scores and points
-- **Clip Creation**: Extract and save important moments from matches
-- **Match Highlight Export**: Compile key points into highlight videos
-- **Video Timeline**: Navigate through match videos with timestamps
+- Node.js 18+
+- FFmpeg on your PATH (or set `FFMPEG_PATH` in `.env`)
 
-## Prerequisites
-
-- Node.js (v16 or higher)
-- npm or yarn
-- FFmpeg (required for video processing features)
-
-## Installation
-
-### Clone the repository
+## Setup
 
 ```bash
-git clone <repository-url>
-cd GameSetAI
-```
-
-### Install dependencies for the server
-
-```bash
-cd server
 npm install
 ```
 
-### Install dependencies for the client
+Copy `.env.example` to `.env` and fill in the Supabase project URL + anon key.
+
+For local signup without email confirmation: Supabase dashboard → Authentication → Providers → Email → turn **Confirm email** off.
 
 ```bash
-cd ../client
-npm install
-```
-
-### FFmpeg Installation
-
-For full video processing capabilities, FFmpeg must be installed on your system and available in your PATH.
-
-#### Windows Installation
-
-1. Download the FFmpeg build from the [official website](https://ffmpeg.org/download.html) or use a package manager like [Chocolatey](https://chocolatey.org/):
-   ```
-   choco install ffmpeg
-   ```
-
-2. Add FFmpeg to your PATH environment variable:
-   - Right-click on "This PC" and select "Properties"
-   - Click on "Advanced system settings"
-   - Click on "Environment Variables"
-   - Under "System variables", find the "Path" variable and click "Edit"
-   - Click "New" and add the path to the FFmpeg bin directory (e.g., `C:\Program Files\FFmpeg\bin`)
-   - Click "OK" to close all dialogs
-
-#### macOS Installation
-
-Using Homebrew:
-```
-brew install ffmpeg
-```
-
-#### Linux Installation
-
-Debian/Ubuntu:
-```
-sudo apt update
-sudo apt install ffmpeg
-```
-
-RedHat/CentOS:
-```
-sudo yum install ffmpeg
-```
-
-### Verify FFmpeg Installation
-
-After installation, verify FFmpeg is correctly installed by running:
-```
-ffmpeg -version
-```
-
-## Running the Application
-
-### Start the server
-
-```bash
-cd server
 npm run dev
 ```
 
-The server will run on http://localhost:3000 by default.
+- App: http://localhost:5173
+- API: http://localhost:3000
+- Health: http://localhost:3000/api/health (`ffmpeg: true` when FFmpeg is found)
 
-### Start the client
+## Use
+
+1. Sign up as a **player** or a **club** (you can change this later under Account).
+2. Upload one or many match videos.
+3. Score points, then **Copy player link** from the library or editor.
+4. The player opens `/m/:token` with no account — they can fix the score and export.
+5. Password reset is on the sign-in page.
+
+Previously uploaded Phase A videos stay on disk but are not in any account. Re-upload them after signing in.
+
+Video files still live in `data/` so FFmpeg can process them. Match metadata is in Supabase.
+
+## Workspace
+
+- `packages/scoring` — tennis rules. Score is always derived via `replay()`. `npm test` runs these fixtures.
+- `client` — Vite + React
+- `server` — Express API + FFmpeg export
+
+## Tests
 
 ```bash
-cd client
-npm run dev
+npm test
 ```
-
-The client will run on http://localhost:5173 by default.
-
-## Usage
-
-1. Access the web application at http://localhost:5173
-2. Upload tennis match videos
-3. Score points and track match progress
-4. Create clips of key moments
-5. Export highlight compilations
-
-## Development Notes
-
-- The application includes fallback functionality when FFmpeg is not installed, but video processing features will be limited.
-- Without FFmpeg, clip "creation" will only store metadata and reference the original video files.
-- Full video processing (trimming, compiling, etc.) requires FFmpeg to be properly installed.

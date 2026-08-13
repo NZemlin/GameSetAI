@@ -45,7 +45,8 @@
 **/*.local
 **/.cache
 **/.temp
-**/Thumbs.db 
+**/Thumbs.db
+**/*.tsbuildinfo 
 
 # Uploaded files
 server/uploads/*
@@ -57,4 +58,5 @@ server/processed/*
 
 # Data files
 server/data/*
-!server/data/.gitkeep 
+!server/data/.gitkeep
+data/ 

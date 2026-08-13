@@ -10,4 +10,12 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') })
 export default defineConfig({
   plugins: [react()],
   envDir: path.resolve(__dirname, '..'),
+  resolve: {
+    alias: {
+      '@gamesetai/scoring': path.resolve(__dirname, '../packages/scoring/src/index.ts'),
+    },
+  },
+  server: {
+    port: 5173,
+  },
 })

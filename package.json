@@ -4,14 +4,16 @@
   "private": true,
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "packages/scoring"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "npm run dev --workspace=client",
     "dev:server": "npm run dev --workspace=server",
-    "build": "npm run build --workspaces",
-    "clean": "npm run clean --workspaces"
+    "test": "npm run test --workspace=@gamesetai/scoring",
+    "build": "npm run build --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.14",
